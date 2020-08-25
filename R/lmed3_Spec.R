@@ -20,7 +20,7 @@ lmed3_Spec <- R6Class(
     },
     make_tmle_task = function(data, node_list, ...) {
       variable_types <- self$options$variable_types
-      tmle_task <- point_tx_task(data, node_list, variable_types)
+      tmle_task <- middle_task(data, node_list, variable_types)
       return(tmle_task)
     },
     make_initial_likelihood = function(tmle_task, learner_list = NULL) {
@@ -29,7 +29,7 @@ lmed3_Spec <- R6Class(
       if (!is.null(self$options$likelihood_override)) {
         likelihood <- self$options$likelihood_override$train(tmle_task)
       } else {
-        likelihood <- point_tx_likelihood(tmle_task, learner_list)
+        likelihood <- middle_likelihood(tmle_task, learner_list)
       }
       
       return(likelihood)
