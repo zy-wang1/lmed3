@@ -1,8 +1,13 @@
 library(data.table)
 library(sl3)
 library(tlverse)
-library(R6)  # R6Class
 library(dplyr)  # %>% 
+
+# dependency
+library(R6)  # R6Class
+library(uuid)  # UUIDgenerate
+library(delayed)  # bundle_delayed
+library(assertthat)  # assert_that
 
 home <- getwd()  # specify it if needed
 source(file.path(home, "code", "basic_functions-202008.R"))
@@ -38,3 +43,21 @@ middle_spec <- lmed_middle(
 )
 
 tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
+
+tmle_task$npsem[[2]] %>% str
+tmle_task$print()
+
+# choose base learners
+lrnr_mean <- make_learner(Lrnr_mean)
+lrnr_glm <- make_learner(Lrnr_glm)
+learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
+  learners = list(lrnr_mean, lrnr_glm)
+))
+names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
+
+
+initial_likelihood <- middle_spec$make_initial_likelihood(
+  tmle_task,
+  learner_list
+)
+print(initial_likelihood)

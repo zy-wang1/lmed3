@@ -57,11 +57,15 @@ middle_task <- function(data, node_list, variable_types = NULL, ...) {
 #' @export
 #' @rdname point_tx
 middle_likelihood <- function(tmle_task, learner_list) {
+  factor_list <- list()
+  
   # covariates
-  W_factor <- define_lf(LF_emp, "W")
+  L_0_factor <- define_lf(LF_emp, "L_0")
+  factor_list[[1]] <- L_0_factor
   
   # treatment (bound likelihood away from 0 (and 1 if binary))
-  A_type <- tmle_task$npsem[["A"]]$variable_type
+  # A_type <- tmle_task$npsem[["A"]]$variable_type
+  A_type <- tmle_task$npsem[[ grep("A", names(tmle_task$npsem))[1] ]]$variable_type  # evaluate the first A node
   if (A_type$type == "continous") {
     A_bound <- c(1 / tmle_task$nrow, Inf)
   } else if (A_type$type %in% c("binomial", "categorical")) {
@@ -70,15 +74,27 @@ middle_likelihood <- function(tmle_task, learner_list) {
     A_bound <- NULL
   }
   
-  A_factor <- define_lf(LF_fit, "A", learner = learner_list[["A"]], bound = A_bound)
+  temp_names <- names(tmle_task$npsem)
+  loc_A <- grep("A", temp_names)
+  factor_list[loc_A] <- lapply(loc_A, function(k) {
+    define_lf(LF_fit, temp_names[k], learner = learner_list[[ temp_names[k] ]], bound = A_bound)
+  })
+  # A_factor <- define_lf(LF_fit, "A", learner = learner_list[["A"]], bound = A_bound)
   
-  # outcome
-  Y_factor <- define_lf(LF_fit, "Y", learner = learner_list[["Y"]], type = "mean")
+  # others
+  loc_others <- (1:length(temp_names))[-c(grep("A", temp_names), 1)]
+  factor_list[loc_others] <- lapply(loc_others, function(k) {
+    define_lf(LF_fit, temp_names[k], learner = learner_list[[ temp_names[k] ]], type = "mean")
+  })
   
-  # construct and train likelihood
-  factor_list <- list(W_factor, A_factor, Y_factor)
+  # # outcome
+  # Y_factor <- define_lf(LF_fit, "Y", learner = learner_list[["Y"]], type = "mean")
+  # 
+  # # construct and train likelihood
+  # factor_list <- list(W_factor, A_factor, Y_factor)
   
   likelihood_def <- Likelihood$new(factor_list)
   likelihood <- likelihood_def$train(tmle_task)
   return(likelihood)
 }
+
