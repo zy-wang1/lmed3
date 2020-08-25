@@ -8,6 +8,8 @@ library(R6)  # R6Class
 library(uuid)  # UUIDgenerate
 library(delayed)  # bundle_delayed
 library(assertthat)  # assert_that
+library(methods)  # is
+
 
 home <- getwd()  # specify it if needed
 source(file.path(home, "code", "basic_functions-202008.R"))
@@ -62,7 +64,7 @@ initial_likelihood <- middle_spec$make_initial_likelihood(
 )
 print(initial_likelihood)
 
-
+initial_likelihood$get_likelihoods(tmle_task)
 
 
 
