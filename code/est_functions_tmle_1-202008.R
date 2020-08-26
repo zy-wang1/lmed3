@@ -69,7 +69,7 @@ est_density_tmle_1 <- function(data_sim, warn = F) {
   
   list_predicted_probs_updated <- list_predicted_probs
   # update list of probs by expit(logit(E Lt) + e * correct Q w.r.t. current lt )
-  for (ind_var in 1:length(list_e_0)) {
+  for (ind_var in 1:length(list_e)) {
     if(!is.null(list_e[[ind_var]])) {
       temp_current <- list_predicted_probs[[ind_var]]  # this is the full input output p^0 at current variable
       

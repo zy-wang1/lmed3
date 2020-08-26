@@ -77,12 +77,12 @@ Param_middle <- R6Class(
       
       intervention_nodes <- union(names(self$intervention_list_treatment), names(self$intervention_list_control))
       
-      # clever_covariates happen here (for this param) only, but this is repeated computation
-      HA <- self$clever_covariates(tmle_task, fold_number)[[self$outcome_node]]
-      
-      
-      # todo: make sure we support updating these params
-      pA <- self$observed_likelihood$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+      # # clever_covariates happen here (for this param) only, but this is repeated computation
+      # HA <- self$clever_covariates(tmle_task, fold_number)[[self$outcome_node]]
+      # 
+      # 
+      # # todo: make sure we support updating these params
+      # pA <- self$observed_likelihood$get_likelihoods(tmle_task, intervention_nodes, fold_number)
       cf_pA_treatment <- self$cf_likelihood_treatment$get_likelihoods(tmle_task, intervention_nodes, fold_number)
       cf_pA_control <- self$cf_likelihood_control$get_likelihoods(tmle_task, intervention_nodes, fold_number)
       
@@ -92,9 +92,9 @@ Param_middle <- R6Class(
       
       Y <- tmle_task$get_tmle_node(self$outcome_node)
       
-      EY <- self$observed_likelihood$get_likelihood(tmle_task, self$outcome_node, fold_number)
-      EY1 <- self$observed_likelihood$get_likelihood(cf_task_treatment, self$outcome_node, fold_number)
-      EY0 <- self$observed_likelihood$get_likelihood(cf_task_control, self$outcome_node, fold_number)
+      # EY <- self$observed_likelihood$get_likelihood(tmle_task, self$outcome_node, fold_number)
+      # EY1 <- self$observed_likelihood$get_likelihood(cf_task_treatment, self$outcome_node, fold_number)
+      # EY0 <- self$observed_likelihood$get_likelihood(cf_task_control, self$outcome_node, fold_number)
       
       # ZW todo: store all possible inputs and outputs as df, and use left_join to call for outputs
       # R and L(t!=0) nodes: treated
@@ -107,24 +107,27 @@ Param_middle <- R6Class(
       # all not A, not t=0 nodes
       temp_node_names <- names(tmle_task$npsem)
       loc_A <- grep("A", temp_node_names)
-      if_not_0 <- sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][2]) != 0
-      nodes_to_combo <- temp_node_names[ sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1]) != "A" & 
-                                           sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][2]) != 0 ]
-      temp_combos <- initial_likelihood$get_possible_counterfactuals(nodes = nodes_to_combo)
+      if_not_0 <- sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][2] != 0)
+      nodes_to_combo <- temp_node_names[ -c(loc_A, which(!if_not_0)) ]
+      temp_combos <- self$observed_likelihood$get_possible_counterfactuals(nodes = nodes_to_combo)
       combos_treat <- combos_control <- data.frame(matrix(0, nrow(temp_combos), length(loc_A)), 
-                                                   temp_combos)
+                                                   temp_combos)  # first tau cols are treat/control
       names(combos_treat)[1:length(loc_A)] <- names(combos_control)[1:length(loc_A)] <- temp_node_names[loc_A]
       # ZW todo: stochastic interventions
-      combos_treat[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) treatment[[k]]$value %>% as.character %>% as.numeric)
-      combos_control[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) control[[k]]$value %>% as.character %>% as.numeric)
+      combos_treat[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) self$intervention_list_treatment[[k]]$value %>% as.character %>% as.numeric)
+      combos_control[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) self$intervention_list_control[[k]]$value %>% as.character %>% as.numeric)
       combos_treat <- combos_treat[ temp_node_names[if_not_0] ]
       combos_control <- combos_control[ temp_node_names[if_not_0] ]
+      # only difference between these two groups of combos is in intervention nodes
       
+      combo_node_names <- colnames(combos_treat)
+      
+      # get the list of LF_static interventions
       temp_list <- list()
       temp_list[[1]] <- lapply(1:nrow(combos_treat), function(row_id) {
         temp_row <- combos_treat[row_id, ]
         temp_treat <- lapply(1:length(temp_row), function(k) {
-          define_lf(LF_static, names(temp_row)[k], value = temp_row[k])
+          define_lf(LF_static, combo_node_names[k], value = temp_row[k])
         })
         names(temp_treat) <- names(temp_row)
         return(temp_treat)
@@ -132,33 +135,51 @@ Param_middle <- R6Class(
       temp_list[[2]] <- lapply(1:nrow(combos_control), function(row_id) {
         temp_row <- combos_control[row_id, ]
         temp_control <- lapply(1:length(temp_row), function(k) {
-          define_lf(LF_static, names(temp_row)[k], value = temp_row[k])
+          define_lf(LF_static, combo_node_names[k], value = temp_row[k])
         })
         names(temp_control) <- names(temp_row)
         return(temp_control)
       })
       # temp_list[[1]]  # each slot of it is a intervention list, behaves like treatment or control
       
-      CF_Likelihood$new(observed_likelihood, intervention_list_treatment)
-      self$cf_likelihood_treatment$enumerate_cf_tasks(tmle_task)[[1]]
+      # list of CF_Likelihood objects
+      cf_list <- list()
+      cf_list[[1]] <- lapply(temp_list[[1]], function(s) {
+        CF_Likelihood$new(self$observed_likelihood, s)
+      })
+      cf_list[[2]] <- lapply(temp_list[[2]], function(s) {
+        CF_Likelihood$new(self$observed_likelihood, s)
+      })
+      # ZW todo: save combo fittings
+      # private$.cf_likelihood_combo_list <- cf_list
+
+      loc_Z <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] == "Z"))
+      loc_RLY <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] %in% c("R", "L", "Y") & strsplit(s, "_")[[1]][2] != 0))
       
-      # an example to get all predicted probs with A=1 inserted, for 1 of the many combos
-      # needs to take these probs for all combos (with corresponding Z/RLY control/treat probs)
-      # product across combos (also times Y) and then average over sample
-      test <- CF_Likelihood$new(initial_likelihood, temp_list[[1]][[100]])
-      test_task <- test$enumerate_cf_tasks(tmle_task)[[1]]
-      test_task$getlik
-      initial_likelihood$get_likelihoods(test_task, NULL, fold_number)  # take Z with control, take RLY with treat
+      # the list of prob products to be summed
+      list_prods <- lapply(1:nrow(combos_treat), function(s) {
+        if(last(combos_treat[s, ]) == 0) {
+          # for Y_tau = 0, return 0
+          return(0)
+        } else {
+          current_combo <- combos_treat[s,]
+          current_combo <- current_combo[-grep("A", names(current_combo))]
+          task_1 <- cf_list[[1]][[s]]$enumerate_cf_tasks(tmle_task)[[1]]  # plug in A=1 for RLY nodes
+          task_2 <- cf_list[[2]][[s]]$enumerate_cf_tasks(tmle_task)[[1]]  # plug in A=0 for Z nodes
+          # take Z with control, take RLY with treat
+          temp_return <- data.frame(self$observed_likelihood$get_likelihoods(task_1, temp_node_names[loc_RLY], fold_number), 
+                                    self$observed_likelihood$get_likelihoods(task_2, temp_node_names[loc_Z], fold_number)
+          )
+          # decide p or 1-p
+          temp_return <- lapply(1:length(current_combo), function(k) if (current_combo[k] == 1) temp_return[k] else 1 - temp_return[k] ) %>% data.frame
+          apply(temp_return, 1, prod)
+        }
+      })
       
-      
-      fold_number <- "full"
-      
-      
-      initial_likelihood$get_likelihood(cf_task_treatment, self$outcome_node, fold_number)
-      
-      psi <- mean(EY1 - EY0)
-      
-      IC <- HA * (Y - EY) + (EY1 - EY0) - psi
+      psi <- pmap_dbl(list_prods, sum) %>% mean
+
+      # ZW todo: get true IC
+      IC <- 0
       
       result <- list(psi = psi, IC = IC)
       return(result)
@@ -177,7 +198,7 @@ Param_middle <- R6Class(
     },
     cf_likelihood_combo_list = function() {
       return(private$.cf_likelihood_combo_list)
-    }
+    },
     intervention_list_treatment = function() {
       return(self$cf_likelihood_treatment$intervention_list)
     },

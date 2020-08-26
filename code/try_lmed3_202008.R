@@ -36,7 +36,6 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
                   Y_2 = "Y_2" 
                   )
 
-
 middle_npsem(node_list)
 
 middle_spec <- lmed_middle(
@@ -66,5 +65,27 @@ print(initial_likelihood)
 
 initial_likelihood$get_likelihoods(tmle_task)
 
+# targeted_likelihood <- Targeted_Likelihood$new(initial_likelihood)
+
+# targeted_likelihood_no_cv <-
+#   Targeted_Likelihood$new(initial_likelihood,
+#                           updater = list(cvtmle = FALSE)
+#   )
 
 
+test <- Param_middle$new(initial_likelihood, treatment, control, outcome_node = last(temp_names))
+test$estimates(tmle_task)$psi
+
+
+# # try initial_likelihood substitution for now
+# tmle_params <- middle_spec$make_params(tmle_task, initial_likelihood)
+# print(tmle_params)
+# 
+# 
+# 
+# tmle_fit_manual <- fit_tmle3(
+#   tmle_task, targeted_likelihood, tmle_params,
+#   targeted_likelihood$updater
+# )
+# print(tmle_fit_manual)
+# 

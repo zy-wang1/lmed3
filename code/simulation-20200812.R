@@ -7,11 +7,26 @@ library(parallel)  # mclapply
 library(abind)  # abind
 library(xtable)  # xtable
 nCores <- 8
+# used for barebone lmed3 functions
+library(data.table)
+library(sl3)
+library(tlverse)
+library(dplyr)  # %>% 
+# other dependency
+library(R6)  # R6Class
+library(uuid)  # UUIDgenerate
+library(delayed)  # bundle_delayed
+library(assertthat)  # assert_that
+library(methods)  # is
+
 
 source(file.path(home, "code", "basic_functions-202008.R"))
 source(file.path(home, "code", "generate_Zheng_data-202008.R"))
 source(file.path(home, "code", "get_list_H.R"))
 source(file.path(home, "code", "est_functions_tmle_1-202008.R"))
+code_list <- list.files("./R", full.names = T)
+lapply(code_list, source)
+
 
 
 data_truth <- generate_Zheng_data(B = 100000, tau = 2, seed = 202008, setAM = c(1, 0))
@@ -31,53 +46,86 @@ glm(data_truth[[3]]$Z ~ data_truth[[1]]$L2 + data_truth[[3]]$R, family = binomia
 glm(data_truth[[3]]$L ~ data_truth[[1]]$L2 + data_truth[[2]]$Z, family = binomial)
 glm(data_truth[[3]]$Y ~ data_truth[[1]]$L2 + data_truth[[3]]$R + data_truth[[3]]$L1 + data_truth[[3]]$Z + data_truth[[3]]$A:data_truth[[3]]$Z + data_truth[[2]]$R, family = binomial)
 
-{
-start.time <- Sys.time()
+# configs for a barebone lmed3 non-targeting substitution estimator
+# ARZLY model
+node_list <- list(L_0 = c("L1_0", "L2_0"), 
+                  A_1 = "A_1",
+                  R_1 = "R_1",
+                  Z_1 = "Z_1", 
+                  L_1 = "L1_1", 
+                  Y_1 = "Y_1", 
+                  A_2 = "A_2", 
+                  R_2 = "R_2", 
+                  Z_2 = "Z_2", 
+                  L_2 = "L1_2", 
+                  Y_2 = "Y_2" 
+)
 
-n_sim <- 200
-sample_size <- 400
-RNGkind("L'Ecuyer-CMRG")
-set.seed(123)
 
-results <- mclapply(1:n_sim, function(s) {
-  data_sim <- generate_Zheng_data(B = sample_size, tau = 2)
-  temp_seq_reg <- est_seq_reg(data_sim = data_sim)
-  temp_density_sub <- est_density_sub(data_sim = data_sim)
-  temp_density_tmle <- est_density_tmle_1(data_sim = data_sim)
-  # temp_onestep <- est_density_onestep(data_sim = data_sim)
-  return(c(temp_seq_reg, temp_density_sub, temp_density_tmle
-           ))
-}, mc.cores = nCores)
-results <- results %>% abind(along = 0)
-
-end.time <- Sys.time()
-time.taken <- end.time - start.time
+n_sim <- 4
+for (sample_size in c(50, 100, 400)) {
+  {
+    start.time <- Sys.time()
+    
+    # sample_size <- 100
+    RNGkind("L'Ecuyer-CMRG")
+    set.seed(123)
+    
+    results <- mclapply(1:n_sim, function(s) {
+      data_sim <- generate_Zheng_data(B = sample_size, tau = 2)
+      temp_seq_reg <- est_seq_reg(data_sim = data_sim)
+      temp_density_sub <- est_density_sub(data_sim = data_sim)
+      temp_density_tmle <- est_density_tmle_1(data_sim = data_sim)
+      # temp_onestep <- est_density_onestep(data_sim = data_sim)
+      
+      {
+        data_wide <- data.frame(data_sim)
+        middle_spec <- lmed_middle(
+          treatment_level = 1,
+          control_level = 0
+        )
+        tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
+        
+        # choose base learners
+        lrnr_mean <- make_learner(Lrnr_mean)
+        lrnr_glm <- make_learner(Lrnr_glm)
+        learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
+          learners = list(lrnr_mean, lrnr_glm)
+        ))
+        names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
+        
+        initial_likelihood <- middle_spec$make_initial_likelihood(
+          tmle_task,
+          learner_list
+        )
+        
+        test <- Param_middle$new(initial_likelihood, treatment, control, outcome_node = last(temp_names))
+        temp_lmed3_nontargeting <- test$estimates(tmle_task)$psi
+      }
+      
+      return(c(temp_seq_reg, temp_density_sub, temp_density_tmle, temp_lmed3_nontargeting
+      ))
+    }, mc.cores = nCores)
+    results <- results %>% abind(along = 0)
+    
+    end.time <- Sys.time()
+    time.taken <- end.time - start.time
+  }
+  
+  time.taken
+  report <- data.frame(Bias = apply(results, 2, function(s) mean(s, na.rm = T)) - truth, 
+                       lapply(1:ncol(results), function(which_col) c(mean((results[, which_col] - truth)^2, na.rm = T), sd(results[, which_col], na.rm = T))) %>% abind(along = 0)
+  )
+  names(report)[2:3] <- c("MSE", "SD")
+  rownames(report) <- c("Non-targeted Sequential Regression", "Non-targeted Density", "First-step Logistic MLE, Density", 
+                        "Non-targeted lmed3 functions"
+  )
+  report <- report[, c(2, 1, 3)]
+  
+  report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size), digits = 6) %>% print(caption.placement = "top") %>% save(file = paste0(sample_size, ".tex"))
 }
 
-time.taken
-report <- data.frame(Bias = apply(results, 2, function(s) mean(s, na.rm = T)) - truth, 
-           lapply(1:ncol(results), function(which_col) c(mean((results[, which_col] - truth)^2, na.rm = T), sd(results[, which_col], na.rm = T))) %>% abind(along = 0)
-           )
-names(report)[2:3] <- c("MSE", "SD")
-rownames(report) <- c("Non-targeted Sequential Regression", "Non-targeted Density", "First-step Logistic MLE, Density")
-report <- report[, c(2, 1, 3)]
-
-# report50 <- report
-# report100 <- report
-report400 <- report
-
-report400 %>% xtable(type = "latex", caption = "Sample size 400.", digits = 6) %>% print(caption.placement = "top")
-report100 %>% xtable(type = "latex", caption = "Sample size 100.", digits = 6) %>% print(caption.placement = "top")
-report50 %>% xtable(type = "latex", caption = "Sample size 50.", digits = 6) %>% print(caption.placement = "top")
 
 
-# report50 <- report
-# report100 <- report
-# report500 <- report
-report500 %>% xtable(type = "latex", caption = "Sample Size 500", digits = 6) %>% print(caption.placement = "top")
-report100 %>% xtable(type = "latex", caption = "Sample Size 100", digits = 6) %>% print(caption.placement = "top")
-report50 %>% xtable(type = "latex", caption = "Sample Size 50", digits = 6) %>% print(caption.placement = "top")
-
-results %>% head
 
 
