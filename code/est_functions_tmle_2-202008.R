@@ -2,10 +2,12 @@
 est_density_tmle_2 <- function(data_sim, warn = F) {
   if (warn == F) options(warn=-1) else {}
   
+  # process simulated data
   data_wide <- data.frame(data_sim)
   variables <- colnames(data_wide)
   tau <- length(data_sim) - 1  # the first slot in data_sim is L_0
   
+  # initial fit; only for t!=0 nodes
   list_density <- lapply(1:length(variables), function(temp_loc) {
     if (temp_loc > ncol(data_sim[[1]])) {
       glm(current~., family = binomial, 
@@ -13,6 +15,7 @@ est_density_tmle_2 <- function(data_sim, warn = F) {
     }
   })
   
+  # get initial predicted probs
   list_predicted_probs <- lapply(1:length(variables), function(temp_loc) {
     if (!is.null(list_density[[temp_loc]])) {
       temp_input <- expand_values(variables = variables[1:temp_loc])
@@ -23,7 +26,7 @@ est_density_tmle_2 <- function(data_sim, warn = F) {
     }
   })
   
-  # generate all possible 0, 1 valued rlz; set A to 0 first; set y_tau to always 1
+  # generate all possible 0, 1 valued RZL(Y); set A to 0 first; set y_tau to always 1, because y_tau=0 makes whole product 0
   all_possible_rlz_1 <- expand_values(variables, to_drop = c(1:length(data_sim[[1]]) ), 
                                       A = 1, 
                                       rule_variables = last(variables), rule_values = 1)
