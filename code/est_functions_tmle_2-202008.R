@@ -1,4 +1,4 @@
-# 1-by-1 logistic, one-step, jointly update
+# one-step MLE grid search, jointly update, (1 + de D)p
 est_density_tmle_2 <- function(data_sim, warn = F) {
   if (warn == F) options(warn=-1) else {}
   
@@ -40,32 +40,81 @@ est_density_tmle_2 <- function(data_sim, warn = F) {
   all_observed_0[, which_variable_take(variables, "A")] <- 0
   # when A=1 and A=0 data tables are inserted the same as the first n-1 cols in list_predicted_probs, H will be saved as a function in the form of a list
   list_H <- get_list_H(all_observed_1, all_observed_0, data_wide, variables, tau, list_predicted_probs)
+  # need to update where list_H is not NULL
   
+  # the imputed Q_{R t+1} for Lt nodes; lt is the inserted Lt value
   list_Q_1 <- get_list_Q(data_wide, variables, tau, list_predicted_probs, list_H, lt = 1)
   list_Q_0 <- get_list_Q(data_wide, variables, tau, list_predicted_probs, list_H, lt = 0)
   
-  # targeting step; get 1 epsilon for each non-null list_H variable
-  list_D_1 <- list_D_0 <- list()
+  # get list of D parts and observed_p
+  list_D <- list()
   for (ind_var in 1:length(list_H)) {
     if(!is.null(list_H[[ind_var]])) {
-      # for non-Z variables, take A=1 probs
+      # build temp_data
+      
+      # for non-Z variables, use A=1 data; otherwise use A=0 data
       if(substr(variables[ind_var], 1, 1) == "Z") {
         temp_data <- all_observed_0
       } else {
         temp_data <- all_observed_1
       }
       
-      # for each lt value
-      temp_data[[ind_var]] <- 1  # lt
-      # D with Lt == lt
-      list_D_1[[ind_var]] <- ((data_wide[[ind_var]] == 1)*1 - left_join(temp_data, list_predicted_probs[[ind_var]])$output) * list_H[[ind_var]] * list_Q_1[[ind_var]]
+      # calculate D's except for D_{L_0}; 
+      temp_data[[ind_var]] <- 1  # update prob of being 1
       
-      # for each lt value
-      temp_data[[ind_var]] <- 0  # lt
-      # D with Lt == lt
-      list_D_0[[ind_var]] <- ((data_wide[[ind_var]] == 0)*1 - left_join(temp_data, list_predicted_probs[[ind_var]])$output) * list_H[[ind_var]] * list_Q_1[[ind_var]]
+      # for each Z or RLY node/variable, call predicted probs and decide p or 1-p
+      temp_p <- left_join(temp_data, list_predicted_probs[[ind_var]])$output
+      # temp_p <- ifelse(temp_data[[ind_var]] == 1, temp_p, 1-temp_p)
+      
+      
+      # for now, these are binary variables
+      list_D[[ind_var]] <- (data_wide[[ind_var]] - temp_p) * 
+        list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
     }
   }
+  
+  
+  # targeting step; get 1 epsilon for each non-null list_H variable
+  # for each slot where list_H is not NULL
+  # try p_update = (1 + D_current * 0.01)p_current and D_update = D(p_update)
+  # p is the prob of being 1
+  
+  list_observed_p_updated <- list_observed_p <- list()
+  for (ind_var in 1:length(list_H)) {
+    if(!is.null(list_H[[ind_var]])) {
+      
+      # for non-Z variables, use A=1 data; otherwise use A=0 data
+      if(substr(variables[ind_var], 1, 1) == "Z") {
+        temp_data <- all_observed_0
+      } else {
+        temp_data <- all_observed_1
+      }
+      temp_data[[ind_var]] <- 1
+      temp_p <- left_join(temp_data, list_predicted_probs[[ind_var]])$output
+      list_observed_p[[ind_var]] <- temp_p
+      update_p <- temp_p * (1 + 0.01 * list_D[[ind_var]])
+      list_observed_p_updated[[ind_var]] <- update_p
+    }
+  }
+  list_D_updated <- list()
+  for (ind_var in 1:length(list_H)) {
+    if(!is.null(list_H[[ind_var]])) {
+      temp_p <- list_observed_p_updated[[ind_var]]
+      
+      # for now, these are binary variables
+      list_D_updated[[ind_var]] <- (data_wide[[ind_var]] - temp_p) * 
+        list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
+    }
+  }
+  
+  
+  
+  
+  # stop if D(p_update) < sd(D(p_update)) / log(n) 
+  vec_D <- list_D %>% compact %>% pmap_dbl(sum)
+  mean(vec_D)
+  sd(vec_D)/log(length(vec_D))
+  
   
   list_observed_p <- list()
   
