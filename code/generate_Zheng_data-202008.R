@@ -5,7 +5,7 @@ library(purrr)
 # tau <- 4  # last time point
 # seed <- 202008  # random seed
 
-generate_Zheng_data <- function(B, tau, seed = NULL, setAM = NULL) {
+generate_Zheng_data <- function(B, tau, seed = NULL, setAM = NULL, if_LY_misspec = F) {
   if (is.null(seed)) {} else set.seed(seed)
   
   # time point 0
@@ -30,13 +30,26 @@ generate_Zheng_data <- function(B, tau, seed = NULL, setAM = NULL) {
       temp_Z <- map_dbl(.x = expit(- 0.5 + 0.8*L02 + 0.8*temp_A + temp_R), 
                         .f = ~ rbinom(n = 1, size = 1, prob = .x)
       )
-      temp_L <- map_dbl(.x = expit(- 1 + 0.3*L02 + temp_A + 0.7*temp_Z - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
-                        .f = ~ rbinom(n = 1, size = 1, prob = .x)
-      )
-      temp_Y <- map_dbl(.x = expit(0.2 + 1.5*L02 + temp_R + 0.2*temp_L - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 
-                                     0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
-                        .f = ~ rbinom(n = 1, size = 1, prob = .x)
-      )
+      if (!if_LY_misspec) {
+        # default, correct data
+        temp_L <- map_dbl(.x = expit(- 1 + 0.3*L02 + temp_A + 0.7*temp_Z - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )
+        temp_Y <- map_dbl(.x = expit(0.2 + 1.5*L02 + temp_R + 0.2*temp_L - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 
+                                       0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )  
+      } else {
+        # LY misspec
+        temp_L <- map_dbl(.x = scale_01(- 1 + 0.3*L02 + temp_A^2 + 0.7*temp_Z^2 - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )
+        temp_Y <- map_dbl(.x = scale_01(0.2 + 1.5*L02^2 + temp_R + 0.2*temp_L^2 - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 
+                                       0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )  
+      }
+      
       temp_data[[t + 1]] <- data.frame(A = temp_A, 
                                        R = temp_R, 
                                        Z = temp_Z, 
@@ -62,12 +75,26 @@ generate_Zheng_data <- function(B, tau, seed = NULL, setAM = NULL) {
                                      temp_R), 
                         .f = ~ rbinom(n = 1, size = 1, prob = .x)
       )
-      temp_L <- map_dbl(.x = expit(- 1 + 0.3*L02 + temp_A + 0.7*temp_Z - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
-                        .f = ~ rbinom(n = 1, size = 1, prob = .x)
-      )
-      temp_Y <- map_dbl(.x = expit(0.2 + 1.5*L02 + temp_R + 0.2*temp_L - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
-                        .f = ~ rbinom(n = 1, size = 1, prob = .x)
-      )
+      if (!if_LY_misspec) {
+        # default, correct data
+        temp_L <- map_dbl(.x = expit(- 1 + 0.3*L02 + temp_A + 0.7*temp_Z - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )
+        temp_Y <- map_dbl(.x = expit(0.2 + 1.5*L02 + temp_R + 0.2*temp_L - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 
+                                       0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )  
+      } else {
+        # LY misspec
+        temp_L <- map_dbl(.x = scale_01(- 1 + 0.3*L02 + temp_A^2 + 0.7*temp_Z^2 - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )
+        temp_Y <- map_dbl(.x = scale_01(0.2 + 1.5*L02^2 + temp_R + 0.2*temp_L^2 - 0.3*temp_A - 0.3*temp_Z - 0.2*temp_A*temp_Z - 
+                                          0.1*ifelse_vec(t>1, temp_data[[t]]$R, 0)), 
+                          .f = ~ rbinom(n = 1, size = 1, prob = .x)
+        )  
+      }
+      
       temp_data[[t + 1]] <- data.frame(A = temp_A, 
                                        R = temp_R, 
                                        Z = temp_Z, 
