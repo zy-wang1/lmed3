@@ -83,8 +83,8 @@ Param_middle <- R6Class(
       # 
       # # todo: make sure we support updating these params
       # pA <- self$observed_likelihood$get_likelihoods(tmle_task, intervention_nodes, fold_number)
-      cf_pA_treatment <- self$cf_likelihood_treatment$get_likelihoods(tmle_task, intervention_nodes, fold_number)
-      cf_pA_control <- self$cf_likelihood_control$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+      # cf_pA_treatment <- self$cf_likelihood_treatment$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+      # cf_pA_control <- self$cf_likelihood_control$get_likelihoods(tmle_task, intervention_nodes, fold_number)
       
       # todo: extend for stochastic
       cf_task_treatment <- self$cf_likelihood_treatment$enumerate_cf_tasks(tmle_task)[[1]]
@@ -116,11 +116,12 @@ Param_middle <- R6Class(
       # ZW todo: stochastic interventions
       combos_treat[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) self$intervention_list_treatment[[k]]$value %>% as.character %>% as.numeric)
       combos_control[1:length(loc_A)] <- lapply(1:length(loc_A), function(k) self$intervention_list_control[[k]]$value %>% as.character %>% as.numeric)
-      combos_treat <- combos_treat[ temp_node_names[if_not_0] ]
-      combos_control <- combos_control[ temp_node_names[if_not_0] ]
+      combo_node_names <- temp_node_names[if_not_0]
+      combos_treat <- combos_treat[ combo_node_names ]
+      combos_control <- combos_control[ combo_node_names ]
       # only difference between these two groups of combos is in intervention nodes
       
-      combo_node_names <- colnames(combos_treat)
+      
       
       # get the list of LF_static interventions
       temp_list <- list()
@@ -129,7 +130,7 @@ Param_middle <- R6Class(
         temp_treat <- lapply(1:length(temp_row), function(k) {
           define_lf(LF_static, combo_node_names[k], value = temp_row[k])
         })
-        names(temp_treat) <- names(temp_row)
+        names(temp_treat) <- combo_node_names
         return(temp_treat)
       })
       temp_list[[2]] <- lapply(1:nrow(combos_control), function(row_id) {
@@ -137,7 +138,7 @@ Param_middle <- R6Class(
         temp_control <- lapply(1:length(temp_row), function(k) {
           define_lf(LF_static, combo_node_names[k], value = temp_row[k])
         })
-        names(temp_control) <- names(temp_row)
+        names(temp_control) <- combo_node_names
         return(temp_control)
       })
       # temp_list[[1]]  # each slot of it is a intervention list, behaves like treatment or control
@@ -170,6 +171,7 @@ Param_middle <- R6Class(
           temp_return <- data.frame(self$observed_likelihood$get_likelihoods(task_1, temp_node_names[loc_RLY], fold_number), 
                                     self$observed_likelihood$get_likelihoods(task_2, temp_node_names[loc_Z], fold_number)
           )
+          temp_return <- temp_return[names(current_combo)]  # match for next step
           # decide p or 1-p
           temp_return <- lapply(1:length(current_combo), function(k) if (current_combo[k] == 1) temp_return[k] else 1 - temp_return[k] ) %>% data.frame
           apply(temp_return, 1, prod)
@@ -210,7 +212,7 @@ Param_middle <- R6Class(
     }
   ),
   private = list(
-    .type = "ATE",
+    .type = "middle",
     .cf_likelihood_treatment = NULL,
     .cf_likelihood_control = NULL, 
     .cf_likelihood_combos_list = NULL

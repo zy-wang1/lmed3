@@ -62,8 +62,11 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
 )
 
 
-n_sim <- 4
-for (sample_size in c(50, 100, 400)) {
+n_sim <- 200
+# sample_size <- 50
+for (sample_size in c(50
+                      , 100, 400
+                      )) {
   {
     start.time <- Sys.time()
     
@@ -89,9 +92,14 @@ for (sample_size in c(50, 100, 400)) {
         # choose base learners
         lrnr_mean <- make_learner(Lrnr_mean)
         lrnr_glm <- make_learner(Lrnr_glm)
+        lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
         learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
-          learners = list(lrnr_mean, lrnr_glm)
+          learners = list(
+            lrnr_mean,
+                          # lrnr_glm, 
+            lrnr_glm_fast)
         ))
+        # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
         names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
         
         initial_likelihood <- middle_spec$make_initial_likelihood(
@@ -99,8 +107,8 @@ for (sample_size in c(50, 100, 400)) {
           learner_list
         )
         
-        test <- Param_middle$new(initial_likelihood, treatment, control, outcome_node = last(temp_names))
-        temp_lmed3_nontargeting <- test$estimates(tmle_task)$psi
+        tmle_params <- middle_spec$make_params(tmle_task, initial_likelihood)[[1]]
+        temp_lmed3_nontargeting <- tmle_params$estimates(tmle_task)$psi
       }
       
       return(c(temp_seq_reg, temp_density_sub, temp_density_tmle, temp_lmed3_nontargeting
@@ -121,8 +129,11 @@ for (sample_size in c(50, 100, 400)) {
                         "Non-targeted lmed3 functions"
   )
   report <- report[, c(2, 1, 3)]
+  report
   
-  report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size), digits = 6) %>% print(caption.placement = "top") %>% save(file = paste0(sample_size, ".tex"))
+  report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size, "; run time: ", round(time.taken, 2), " ", units(time.taken)), digits = 6) %>% print(caption.placement = "top",
+                                                                                                                                   file = paste0("./temp/", sample_size, ".tex")
+                                                                                                                                   )
 }
 
 
