@@ -24,6 +24,7 @@ source(file.path(home, "code", "basic_functions-202008.R"))
 source(file.path(home, "code", "generate_Zheng_data-202008.R"))
 source(file.path(home, "code", "get_list_H.R"))
 source(file.path(home, "code", "est_functions_tmle_1-202008.R"))
+source(file.path(home, "code", "est_functions_tmle_2-202008.R"))
 code_list <- list.files("./R", full.names = T)
 lapply(code_list, source)
 
@@ -60,6 +61,8 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
                   L_2 = "L1_2", 
                   Y_2 = "Y_2" 
 )
+
+
 
 
 n_sim <- 200
@@ -140,3 +143,52 @@ for (sample_size in c(50
 
 
 
+# first one-step simulation
+n_sim <- 200
+# sample_size <- 100
+for (sample_size in c(50
+                      , 100, 400
+)) {
+  {
+    start.time <- Sys.time()
+    
+    # sample_size <- 100
+    RNGkind("L'Ecuyer-CMRG")
+    set.seed(123)
+    
+    results <- mclapply(1:n_sim, function(s) {
+      data_sim <- generate_Zheng_data(B = sample_size, tau = 2)
+      temp_seq_reg <- est_seq_reg(data_sim = data_sim)
+      # temp_density_sub <- est_density_sub(data_sim = data_sim)
+      # temp_density_tmle <- est_density_tmle_1(data_sim = data_sim)
+      temp_onestep <- est_density_tmle_2(data_sim = data_sim)
+      
+
+      return(c(temp_seq_reg, 
+               # temp_density_sub, temp_density_tmle, temp_lmed3_nontargeting
+               temp_onestep
+      ))
+    }, mc.cores = nCores)
+    results <- results %>% abind(along = 0)
+    
+    end.time <- Sys.time()
+    time.taken <- end.time - start.time
+  }
+  
+  time.taken
+  report <- data.frame(Bias = apply(results, 2, function(s) mean(s, na.rm = T)) - truth, 
+                       lapply(1:ncol(results), function(which_col) c(mean((results[, which_col] - truth)^2, na.rm = T), sd(results[, which_col], na.rm = T))) %>% abind(along = 0)
+  )
+  names(report)[2:3] <- c("MSE", "SD")
+  rownames(report) <- c("Non-targeted Sequential Regression", 
+                        # "Non-targeted Density", "First-step Logistic MLE, Density", 
+                        # "Non-targeted lmed3 functions"
+                        "One-step MLE grid search"
+  )
+  report <- report[, c(2, 1, 3)]
+  report
+  
+  report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size, "; run time: ", round(time.taken, 2), " ", units(time.taken)), digits = 6) %>% print(caption.placement = "top",
+                                                                                                                                                                       file = paste0("./temp/", sample_size, "_onestep.tex")
+  )
+}

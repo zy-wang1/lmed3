@@ -46,122 +46,119 @@ est_density_tmle_2 <- function(data_sim, warn = F) {
   list_Q_1 <- get_list_Q(data_wide, variables, tau, list_predicted_probs, list_H, lt = 1)
   list_Q_0 <- get_list_Q(data_wide, variables, tau, list_predicted_probs, list_H, lt = 0)
   
-  # get list of D parts and observed_p
+  
+  # targeting step; get 1 epsilon for each non-null list_H variable
+  # try p_update = (1 + D_current * 0.01)p_current and D_update = D(p_update)
+  
+  list_predicted_probs_update <- list_predicted_probs_current <- list_predicted_probs
+  for (ind_var in 1:length(list_H)) {
+    if(!is.null(list_H[[ind_var]])) {
+      temp_current <- list_predicted_probs_current[[ind_var]]  # this is the full input output p^0 at current variable
+      
+      # where E Lt needs to be updated
+      Xt_input <- temp_current[ind_var]
+      
+      loc_to_update <- Xt_input == 1
+      df_to_update <- temp_current[loc_to_update, ]  # the possible input where L_t = 1
+      df_to_update_0 <- df_to_update
+      df_to_update_0[ind_var] <- 0  # replacing the above input with Lt = 0
+      
+      Q_current_1 <- get_Q_current(df_to_update[1:ind_var], variables, tau, list_predicted_probs_current)  # Q with lt = 1
+      Q_current_0 <- get_Q_current(df_to_update_0[1:ind_var], variables, tau, list_predicted_probs_current)  # Q with lt = 1
+      Q_current <- Q_current_1 - Q_current_0
+      
+      H_current <- get_H_current(df_to_update[1:ind_var], variables, tau, list_predicted_probs_current)
+      df_to_update$output <- (1 + 0.01 * H_current * Q_current * (1 - temp_current$output[loc_to_update])) * temp_current$output[loc_to_update]
+        # expit(logit(df_to_update$output) + list_e[[ind_var]] * H_current * Q_current)
+      raw_probs <- left_join(temp_current[1:(ind_var-1)], df_to_update)$output
+      list_predicted_probs_update[[ind_var]]$output <- ifelse(loc_to_update, raw_probs, 1-raw_probs)
+    }
+  }
+
+  # get list of observed updated D parts; for convergence
   list_D <- list()
   for (ind_var in 1:length(list_H)) {
     if(!is.null(list_H[[ind_var]])) {
-      # build temp_data
-      
       # for non-Z variables, use A=1 data; otherwise use A=0 data
       if(substr(variables[ind_var], 1, 1) == "Z") {
         temp_data <- all_observed_0
       } else {
         temp_data <- all_observed_1
       }
-      
       # calculate D's except for D_{L_0}; 
       temp_data[[ind_var]] <- 1  # update prob of being 1
-      
       # for each Z or RLY node/variable, call predicted probs and decide p or 1-p
-      temp_p <- left_join(temp_data, list_predicted_probs[[ind_var]])$output
-      # temp_p <- ifelse(temp_data[[ind_var]] == 1, temp_p, 1-temp_p)
-      
-      
+      temp_p <- left_join(temp_data, list_predicted_probs_update[[ind_var]])$output
+      temp_p <- ifelse(temp_data[[ind_var]] == 1, temp_p, 1-temp_p)
       # for now, these are binary variables
+      # get updated lists first
+      list_H <- get_list_H(all_observed_1, all_observed_0, data_wide, variables, tau, list_predicted_probs_update)
+      list_Q_1 <- get_list_Q(data_wide, variables, tau, list_predicted_probs_update, list_H, lt = 1)
+      list_Q_0 <- get_list_Q(data_wide, variables, tau, list_predicted_probs_update, list_H, lt = 0)
+      
       list_D[[ind_var]] <- (data_wide[[ind_var]] - temp_p) * 
         list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
     }
   }
-  
-  
-  # targeting step; get 1 epsilon for each non-null list_H variable
-  # for each slot where list_H is not NULL
-  # try p_update = (1 + D_current * 0.01)p_current and D_update = D(p_update)
-  # p is the prob of being 1
-  
-  list_observed_p_updated <- list_observed_p <- list()
-  for (ind_var in 1:length(list_H)) {
-    if(!is.null(list_H[[ind_var]])) {
-      
-      # for non-Z variables, use A=1 data; otherwise use A=0 data
-      if(substr(variables[ind_var], 1, 1) == "Z") {
-        temp_data <- all_observed_0
-      } else {
-        temp_data <- all_observed_1
-      }
-      temp_data[[ind_var]] <- 1
-      temp_p <- left_join(temp_data, list_predicted_probs[[ind_var]])$output
-      list_observed_p[[ind_var]] <- temp_p
-      update_p <- temp_p * (1 + 0.01 * list_D[[ind_var]])
-      list_observed_p_updated[[ind_var]] <- update_p
-    }
-  }
-  list_D_updated <- list()
-  for (ind_var in 1:length(list_H)) {
-    if(!is.null(list_H[[ind_var]])) {
-      temp_p <- list_observed_p_updated[[ind_var]]
-      
-      # for now, these are binary variables
-      list_D_updated[[ind_var]] <- (data_wide[[ind_var]] - temp_p) * 
-        list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
-    }
-  }
-  
-  
-  
-  
   # stop if D(p_update) < sd(D(p_update)) / log(n) 
   vec_D <- list_D %>% compact %>% pmap_dbl(sum)
-  mean(vec_D)
-  sd(vec_D)/log(length(vec_D))
-  
-  
-  list_observed_p <- list()
-  
-  # for each observed L_0 vector, generate all needed combinations, one version for A = 1, one version for A = 0
-  unique_L0 <- data_sim[[1]] %>% unique
-  library_L0 <- data.frame(unique_L0, output = 
-                             map_dbl(1:nrow(unique_L0), function(which_row) {
-                               temp_all_comb_0 <- cbind(unique_L0[which_row, ], all_possible_rlz_0)
-                               temp_all_comb_1 <- cbind(unique_L0[which_row, ], all_possible_rlz_1)
-                               # for all non-A, non-0 variables, calculate the variable by rule
-                               # for Z's, use A = 0 values; outputs are predicted probs at each possible comb
-                               temp_list_0 <- lapply(which_variable_take(variables, to_take_variable = "Z"), 
-                                                     function(each_t) {
-                                                       left_join(temp_all_comb_0, list_predicted_probs_updated[[each_t]])$output
-                                                     })
-                               temp_list_1 <- lapply(which_variable_drop(variables, c("A", "Z"), 0), 
-                                                     function(each_t) {
-                                                       left_join(temp_all_comb_1, list_predicted_probs_updated[[each_t]])$output
-                                                     })
-                               temp_list <- c(temp_list_0, temp_list_1)
-                               pmap_dbl(temp_list, prod) %>% sum %>% return
-                             })
-  )
-  
-  if (warn == F) options(warn=0) else {}
-  # substitution estimator
-  left_join(data_sim[[1]], library_L0)$output
-  
-  
-  
-  
-  list_predicted_probs_updated <- list_predicted_probs
-  # update list of probs by expit(logit(prob) + correct e w.r.t. current lt * correct Q w.r.t. current lt )
-  for (ind_var in 1:length(list_e_0)) {
-    if(!is.null(list_e_0[[ind_var]])) {
-      temp_current <- list_predicted_probs[[ind_var]]
-      Q_current <- get_Q_current(temp_current[1:ind_var], variables, tau, list_predicted_probs)
-      H_current <- get_H_current(temp_current[1:ind_var], variables, tau, list_predicted_probs)
-      list_predicted_probs_updated[[ind_var]]$output <- expit(logit(temp_current$output) + 
-                                                                ifelse(temp_current[[ind_var]] == 1, 
-                                                                       list_e_1[[ind_var]], 
-                                                                       list_e_0[[ind_var]]) * H_current * Q_current)
+  counter <- 1
+  while (abs(mean(vec_D)) > sd(vec_D)/log(length(vec_D)) & counter <= 10) {
+    list_predicted_probs_current <- list_predicted_probs_update
+    for (ind_var in 1:length(list_H)) {
+      if(!is.null(list_H[[ind_var]])) {
+        temp_current <- list_predicted_probs_current[[ind_var]]  # this is the full input output p^0 at current variable
+        
+        # where E Lt needs to be updated
+        Xt_input <- temp_current[ind_var]
+        
+        loc_to_update <- Xt_input == 1
+        df_to_update <- temp_current[loc_to_update, ]  # the possible input where L_t = 1
+        df_to_update_0 <- df_to_update
+        df_to_update_0[ind_var] <- 0  # replacing the above input with Lt = 0
+        
+        Q_current_1 <- get_Q_current(df_to_update[1:ind_var], variables, tau, list_predicted_probs_current)  # Q with lt = 1
+        Q_current_0 <- get_Q_current(df_to_update_0[1:ind_var], variables, tau, list_predicted_probs_current)  # Q with lt = 1
+        Q_current <- Q_current_1 - Q_current_0
+        
+        H_current <- get_H_current(df_to_update[1:ind_var], variables, tau, list_predicted_probs_current)
+        df_to_update$output <- (1 + 0.01 * H_current * Q_current * (1 - temp_current$output[loc_to_update])) * temp_current$output[loc_to_update]
+        # expit(logit(df_to_update$output) + list_e[[ind_var]] * H_current * Q_current)
+        raw_probs <- left_join(temp_current[1:(ind_var-1)], df_to_update)$output
+        list_predicted_probs_update[[ind_var]]$output <- ifelse(loc_to_update, raw_probs, 1-raw_probs)
+      }
+    } 
+    for (ind_var in 1:length(list_H)) {
+      if(!is.null(list_H[[ind_var]])) {
+        # for non-Z variables, use A=1 data; otherwise use A=0 data
+        if(substr(variables[ind_var], 1, 1) == "Z") {
+          temp_data <- all_observed_0
+        } else {
+          temp_data <- all_observed_1
+        }
+        # calculate D's except for D_{L_0}; 
+        temp_data[[ind_var]] <- 1  # update prob of being 1
+        # for each Z or RLY node/variable, call predicted probs and decide p or 1-p
+        temp_p <- left_join(temp_data, list_predicted_probs_update[[ind_var]])$output
+        temp_p <- ifelse(temp_data[[ind_var]] == 1, temp_p, 1-temp_p)
+        # for now, these are binary variables
+        # get updated lists first
+        list_H <- get_list_H(all_observed_1, all_observed_0, data_wide, variables, tau, list_predicted_probs_update)
+        list_Q_1 <- get_list_Q(data_wide, variables, tau, list_predicted_probs_update, list_H, lt = 1)
+        list_Q_0 <- get_list_Q(data_wide, variables, tau, list_predicted_probs_update, list_H, lt = 0)
+        
+        list_D[[ind_var]] <- (data_wide[[ind_var]] - temp_p) * 
+          list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
+      }
     }
+    vec_D <- list_D %>% compact %>% pmap_dbl(sum)
+    counter <- counter + 1
   }
   
   
   
+  
+  
   # for each observed L_0 vector, generate all needed combinations, one version for A = 1, one version for A = 0
   unique_L0 <- data_sim[[1]] %>% unique
   library_L0 <- data.frame(unique_L0, output = 
@@ -172,11 +169,11 @@ est_density_tmle_2 <- function(data_sim, warn = F) {
                                # for Z's, use A = 0 values; outputs are predicted probs at each possible comb
                                temp_list_0 <- lapply(which_variable_take(variables, to_take_variable = "Z"), 
                                                      function(each_t) {
-                                                       left_join(temp_all_comb_0, list_predicted_probs_updated[[each_t]])$output
+                                                       left_join(temp_all_comb_0, list_predicted_probs_update[[each_t]])$output
                                                      })
                                temp_list_1 <- lapply(which_variable_drop(variables, c("A", "Z"), 0), 
                                                      function(each_t) {
-                                                       left_join(temp_all_comb_1, list_predicted_probs_updated[[each_t]])$output
+                                                       left_join(temp_all_comb_1, list_predicted_probs_update[[each_t]])$output
                                                      })
                                temp_list <- c(temp_list_0, temp_list_1)
                                pmap_dbl(temp_list, prod) %>% sum %>% return
