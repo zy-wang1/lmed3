@@ -216,13 +216,14 @@ data_truth <- generate_Zheng_data(B = 100000, tau = 2, seed = 202008, setAM = c(
 truth <- data_truth[[3]]$Y %>% mean
 truth
 
-n_sim <- 200
+n_sim <- 500
 # sample_size <- 50
 for (sample_size in c(
   # 50
   # , 
-  100
-  , 400
+  # 100
+  # , 400
+  1000, 4000
 )) {
   {
     start.time <- Sys.time()
