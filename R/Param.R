@@ -104,6 +104,10 @@ Param_middle <- R6Class(
       
       # self$observed_likelihood is just a likelihood; it has get_possible_counterfactuals method
       
+      if (is.null(tmle_task)) {
+        tmle_task <- self$observed_likelihood$training_task
+      }
+      
       # all not A, not t=0 nodes
       temp_node_names <- names(tmle_task$npsem)
       loc_A <- grep("A", temp_node_names)
@@ -120,8 +124,6 @@ Param_middle <- R6Class(
       combos_treat <- combos_treat[ combo_node_names ]
       combos_control <- combos_control[ combo_node_names ]
       # only difference between these two groups of combos is in intervention nodes
-      
-      
       
       # get the list of LF_static interventions
       temp_list <- list()
@@ -152,7 +154,13 @@ Param_middle <- R6Class(
         CF_Likelihood$new(self$observed_likelihood, s)
       })
       # ZW todo: save combo fittings
-      # private$.cf_likelihood_combo_list <- cf_list
+      private$.cf_likelihood_combo_list <- cf_list
+      
+      
+      
+
+      
+      cf_list <- self$cf_likelihood_combo_list
 
       loc_Z <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] == "Z"))
       loc_RLY <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] %in% c("R", "L", "Y") & strsplit(s, "_")[[1]][2] != 0))
@@ -215,7 +223,7 @@ Param_middle <- R6Class(
     .type = "middle",
     .cf_likelihood_treatment = NULL,
     .cf_likelihood_control = NULL, 
-    .cf_likelihood_combos_list = NULL
+    .cf_likelihood_combo_list = NULL
   )
 )
 
