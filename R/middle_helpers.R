@@ -77,14 +77,14 @@ middle_likelihood <- function(tmle_task, learner_list) {
   temp_names <- names(tmle_task$npsem)
   loc_A <- grep("A", temp_names)
   factor_list[loc_A] <- lapply(loc_A, function(k) {
-    define_lf(LF_fit, temp_names[k], learner = learner_list[[ temp_names[k] ]], bound = A_bound)
+    LF_fit$new(temp_names[k], learner = learner_list[[ temp_names[k] ]], bound = A_bound, type = "density")
   })
   # A_factor <- define_lf(LF_fit, "A", learner = learner_list[["A"]], bound = A_bound)
   
   # others
   loc_others <- (1:length(temp_names))[-c(grep("A", temp_names), 1)]
   factor_list[loc_others] <- lapply(loc_others, function(k) {
-    define_lf(LF_fit, temp_names[k], learner = learner_list[[ temp_names[k] ]], type = "mean")
+    LF_fit$new(temp_names[k], learner = learner_list[[ temp_names[k] ]], type = "density")
   })
   
   # # outcome
