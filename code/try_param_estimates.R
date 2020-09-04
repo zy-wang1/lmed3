@@ -2,25 +2,25 @@
 # self$ -> tmle_params$
 
 if (is.null(tmle_task)) {
-  tmle_task <- self$observed_likelihood$training_task
+  tmle_task <- initial_likelihood$training_task
 }
 
-intervention_nodes <- union(names(self$intervention_list_treatment), names(self$intervention_list_control))
+intervention_nodes <- union(names(tmle_params$intervention_list_treatment), names(tmle_params$intervention_list_control))
 
 # # clever_covariates happen here (for this param) only, but this is repeated computation
-# HA <- self$clever_covariates(tmle_task, fold_number)[[self$outcome_node]]
+# HA <- tmle_params$clever_covariates(tmle_task, fold_number)[[tmle_params$outcome_node]]
 # 
 # 
 # # todo: make sure we support updating these params
-# pA <- self$observed_likelihood$get_likelihoods(tmle_task, intervention_nodes, fold_number)
-# cf_pA_treatment <- self$cf_likelihood_treatment$get_likelihoods(tmle_task, intervention_nodes, fold_number)
-# cf_pA_control <- self$cf_likelihood_control$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+# pA <- initial_likelihood$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+# cf_pA_treatment <- tmle_params$cf_likelihood_treatment$get_likelihoods(tmle_task, intervention_nodes, fold_number)
+# cf_pA_control <- tmle_params$cf_likelihood_control$get_likelihoods(tmle_task, intervention_nodes, fold_number)
 
 # todo: extend for stochastic
-cf_task_treatment <- self$cf_likelihood_treatment$enumerate_cf_tasks(tmle_task)[[1]]
-cf_task_control <- self$cf_likelihood_control$enumerate_cf_tasks(tmle_task)[[1]]
+cf_task_treatment <- tmle_params$cf_likelihood_treatment$enumerate_cf_tasks(tmle_task)[[1]]
+cf_task_control <- tmle_params$cf_likelihood_control$enumerate_cf_tasks(tmle_task)[[1]]
 
-Y <- tmle_task$get_tmle_node(self$outcome_node)
+Y <- tmle_task$get_tmle_node(tmle_params$outcome_node)
 
 # all not A, not t=0 nodes
 temp_node_names <- names(tmle_task$npsem)
@@ -38,15 +38,15 @@ list_all_predicted_lkd <- lapply(1:length(temp_node_names), function(loc_node) {
     current_variable <- tmle_task$npsem[[loc_node]]$variables
     temp_input <- expand_values(variables = obs_variable_names[1:which(obs_variable_names == current_variable)])  # all possible inputs
     temp_task <- lmed3_Task$new(temp_input, tmle_task$npsem[1:loc_node])
-    temp_output <- self$observed_likelihood$factor_list[[loc_node]]$get_likelihood(temp_task, fold_number = "full")  # corresponding outputs
+    temp_output <- initial_likelihood$factor_list[[loc_node]]$get_likelihood(temp_task, fold_number = "full")  # corresponding outputs
     data.frame(temp_input, output = temp_output) %>% return
   }
 })
 
 intervention_variables <- map_chr(tmle_task$npsem[intervention_nodes], ~.x$variables)
 intervention_variables_loc <- map_dbl(intervention_variables, ~grep(.x, obs_variable_names))
-intervention_levels_treat <- map_dbl(self$intervention_list_treatment, ~.x$value %>% as.character %>% as.numeric)
-intervention_levels_control <- map_dbl(self$intervention_list_control, ~.x$value %>% as.character %>% as.numeric)
+intervention_levels_treat <- map_dbl(tmle_params$intervention_list_treatment, ~.x$value %>% as.character %>% as.numeric)
+intervention_levels_control <- map_dbl(tmle_params$intervention_list_control, ~.x$value %>% as.character %>% as.numeric)
 # nodes to integrate out in the target identification
 # only support univaraite node for now; assume treatment level is one
 all_possible_RZLY_1 <- expand_values(obs_variable_names, to_drop = c(1:length(tmle_task$npsem[[1]]$variables) ), 
@@ -83,7 +83,7 @@ library_L0 <- data.frame(unique_L0, output =
 vec_est <- left_join(data_sim[[1]], library_L0)$output
 psi <- mean(vec_est)
 
-# self$.list_all_predicted_lkd <- list_all_predicted_lkd
+# tmle_params$.list_all_predicted_lkd <- list_all_predicted_lkd
 
 # get true IC
 
@@ -94,7 +94,7 @@ for (temp_A in intervention_variables) {
   all_observed_0 <- all_observed_0 %>% mutate(!!temp_A := 0)
 }
 
-list_H <- get_obs_H(tmle_task, obs_data, current_likelihood = self$observed_likelihood, 
+list_H <- get_obs_H(tmle_task, obs_data, current_likelihood = initial_likelihood, 
                     cf_task_treatment, cf_task_control, 
                     intervention_variables, intervention_levels_treat, intervention_levels_control)
 # get a list of needed deltaQ
@@ -112,8 +112,8 @@ for (ind_var in 1:length(list_H)) {
   if(!is.null(list_H[[ind_var]])) {
     # ZW todo: for discretized variables
     current_ind <- (obs_data[[tmle_task$npsem[[ind_var]]$variables]] == 1)*1
-    if (ind_var %in% loc_Z) temp_p <- self$observed_likelihood$get_likelihoods(cf_task_control, temp_node_names[ind_var]) else 
-      temp_p <- self$observed_likelihood$get_likelihoods(cf_task_treatment, temp_node_names[ind_var])
+    if (ind_var %in% loc_Z) temp_p <- initial_likelihood$get_likelihoods(cf_task_control, temp_node_names[ind_var]) else 
+      temp_p <- initial_likelihood$get_likelihoods(cf_task_treatment, temp_node_names[ind_var])
     list_D[[ind_var]] <- (current_ind - temp_p) *
       list_H[[ind_var]] * (list_Q_1[[ind_var]] - list_Q_0[[ind_var]])
   }

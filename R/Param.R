@@ -155,7 +155,7 @@ Param_middle <- R6Class(
       vec_est <- left_join(data_sim[[1]], library_L0)$output
       psi <- mean(vec_est)
       
-      self$.list_all_predicted_lkd <- list_all_predicted_lkd
+      private$.list_all_predicted_lkd <- list_all_predicted_lkd
       
       # get true IC
       

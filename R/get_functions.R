@@ -25,7 +25,7 @@ get_obs_Q <- function(tmle_task, obs_data, list_H,
                                            rule_values = c(1, lt, intervention_levels_control))
       
       # for each observed L_0 vector, generate all needed combinations, one version for A = 1, one version for A = 0
-      unique_input <- obs_data[1:(loc_current_var-1)] %>% unique
+      unique_input <- obs_data[, 1:(loc_current_var-1)] %>% unique
       library_output <- data.frame(unique_input, output = 
                                      map_dbl(1:nrow(unique_input), function(which_row) {
                                        # probs in the integrals, A=1 or A=0 is inserted
@@ -51,9 +51,11 @@ get_obs_Q <- function(tmle_task, obs_data, list_H,
                                        pmap_dbl(temp_list, prod) %>% sum %>% return
                                      })
       )
-      list_Q[[loc_node]] <- left_join(obs_data[1:(loc_current_var-1)], library_output)$output
+      list_Q[[loc_node]] <- left_join(obs_data[, 1:(loc_current_var-1)], library_output)$output
     }
   }
+  
+  return(list_Q)
 }
 
 
