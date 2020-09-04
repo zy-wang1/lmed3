@@ -1,4 +1,3 @@
-
 get_list_H <- function(all_observed_1, all_observed_0, data_wide, variables, tau, list_predicted_probs) {
   list_H <- list()
   
