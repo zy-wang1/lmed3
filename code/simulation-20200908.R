@@ -40,20 +40,20 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
                   Z_1 = "Z_1", 
                   L_1 = "L1_1", 
                   Y_1 = "Y_1"
-                  ,
-                  A_2 = "A_2",
-                  R_2 = "R_2",
-                  Z_2 = "Z_2",
-                  L_2 = "L1_2",
-                  Y_2 = "Y_2"
+                  # ,
+                  # A_2 = "A_2",
+                  # R_2 = "R_2",
+                  # Z_2 = "Z_2",
+                  # L_2 = "L1_2",
+                  # Y_2 = "Y_2"
 )
 
 
 
 
 if_misspec <- F
-n_sim <- 100
-timepoint <- 2
+n_sim <- 8
+timepoint <- 1
 sample_size <- 500
 
 for (if_misspec in c(
