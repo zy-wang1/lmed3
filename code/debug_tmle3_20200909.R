@@ -73,7 +73,7 @@ for (steps in seq_len(maxit)) {
     break
   }
 }
-updater$steps
+updater$step_number
 estimates <- lapply(
   tmle_params,
   function(tmle_param) {
@@ -85,7 +85,7 @@ temp_density_tmle
 estimates
 ED_from_estimates(estimates)
 targeted_likelihood$factor_list[[8]]
-targeted_likelihood$cache$get_update_step(likelihood_factor = targeted_likelihood$factor_list[[8]], tmle_task = tmle_task, fold_number = "full")
+targeted_likelihood$cache$get_update_step(likelihood_factor = targeted_likelihood$factor_list[[4]], tmle_task = tmle_task, fold_number = "full")
 
 # check updater$update_step and updater$check_convergence
 # every time updater$update_step and updater$generate_submodel_data are called, update clever covariates obs in params

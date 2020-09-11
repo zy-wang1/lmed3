@@ -49,7 +49,9 @@ lmed3_Update <- R6Class(
                           constrain_step = FALSE, delta_epsilon = 1e-4,
                           convergence_type = c("scaled_var", "sample_size"),
                           fluctuation_type = c("standard", "weighted"),
-                          verbose = FALSE) {
+                          verbose = FALSE, 
+                          d_epsilon = 0.01, 
+                          submodel_type = "logistic") {
       private$.maxit <- maxit
       private$.cvtmle <- cvtmle
       private$.one_dimensional <- one_dimensional
@@ -58,6 +60,8 @@ lmed3_Update <- R6Class(
       private$.convergence_type <- match.arg(convergence_type)
       private$.fluctuation_type <- match.arg(fluctuation_type)
       private$.verbose <- verbose
+      private$.d_epsilon <- d_epsilon
+      private$.submodel_type <- submodel_type
     },
     collapse_covariates = function(estimates, clever_covariates) {
       ED <- ED_from_estimates(estimates)
@@ -68,28 +72,46 @@ lmed3_Update <- R6Class(
     },
     update_step = function(likelihood, tmle_task, fold_number = "full") {
       
-      # get new submodel fit
-      all_submodels <- self$generate_submodel_data(
-        likelihood, tmle_task,
-        fold_number
-      )
-      new_epsilons <- self$fit_submodels(all_submodels)
-      
-      # update likelihoods
-      likelihood$update(new_epsilons, self$step_number, fold_number)  # now full lkd list is updated too
-      
-      nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
-        tmle_param$clever_covariates(tmle_task, fold_number
-                                     , update = T
-        )  # this updates the covariates
-      }))
-      
-      if (fold_number != "full") {
-        # update full fit likelihoods if we haven't already
-        likelihood$update(new_epsilons, self$step_number, "full")
+      if (self$submodel_type == "onestep") {
+        # update likelihoods
+        likelihood$update(new_epsilons = 0, self$step_number, fold_number)  # now full lkd list is updated too
+        
+        nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
+          tmle_param$clever_covariates(tmle_task, fold_number
+                                       , update = T
+          )  # this updates the covariates; it does not call full list of lkd
+        }))
+        
+        if (fold_number != "full") {
+          # update full fit likelihoods if we haven't already
+          likelihood$update(new_epsilons = 0, self$step_number, "full")
+        }
+        # increment step count
+        private$.step_number <- private$.step_number + 1
+      } else {
+        # get new submodel fit
+        all_submodels <- self$generate_submodel_data(
+          likelihood, tmle_task,
+          fold_number
+        )
+        new_epsilons <- self$fit_submodels(all_submodels)
+        
+        # update likelihoods
+        likelihood$update(new_epsilons, self$step_number, fold_number)  # now full lkd list is updated too
+        
+        nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
+          tmle_param$clever_covariates(tmle_task, fold_number
+                                       , update = T
+          )  # this updates the covariates
+        }))
+        
+        if (fold_number != "full") {
+          # update full fit likelihoods if we haven't already
+          likelihood$update(new_epsilons, self$step_number, "full")
+        }
+        # increment step count
+        private$.step_number <- private$.step_number + 1
       }
-      # increment step count
-      private$.step_number <- private$.step_number + 1
     },
     generate_submodel_data = function(likelihood, tmle_task,
                                       fold_number = "full") {
@@ -271,73 +293,58 @@ lmed3_Update <- R6Class(
       
       return(updated_likelihoods)
     },
-    apply_update_onestep = function(tmle_task, likelihood, fold_number, delta_epsilon = 0.01) {
+    apply_update_onestep = function(tmle_task, likelihood, fold_number, d_epsilon) {
       update_nodes <- self$update_nodes
       
-      # only need the list of D to get (1 + delta_epsilon*D(p_k)) * p_k for each p_k
+      # only need the list of D to get (1 + d_epsilon*D(p_k)) * p_k for each p_k
       list_D <- lapply(self$tmle_params, function(tmle_param) {
         tmle_param$list_D
       })
       
-      # observed_values <- lapply(update_nodes, tmle_task$get_tmle_node)  # not needed
+      observed_values <- lapply(update_nodes, tmle_task$get_tmle_node)  # needed to transform lkd to prob
+      names(observed_values) <- update_nodes
       
       all_submodels <- lapply(update_nodes, function(update_node) {
         node_D <- lapply(list_D, `[[`, update_node)
         D_dt <- do.call(cbind, node_D)  # there might be multiple targets
-        # if (self$one_dimensional) {
-        #   observed_task <- likelihood$training_task
-        #   estimates <- lapply(self$tmle_params, function(tmle_param) {
-        #     tmle_param$estimates(observed_task, fold_number)
-        #   })
-        #   covariates_dt <- self$collapse_covariates(estimates, covariates_dt)
-        # }
-        
+
         initial <- likelihood$get_likelihood(
           tmle_task, update_node,
           fold_number
         )  # observed (updated or initial) likelihood at this node
-        initial <- ifelse(observed == 1, initial, 1 - initial)
         
         # scale observed and predicted values for bounded continuous
-        observed <- tmle_task$scale(observed, update_node)
+        observed <- observed_values[[update_node]]
+        # observed <- tmle_task$scale(observed, update_node)
         initial <- tmle_task$scale(initial, update_node)
+        
+        initial <- ifelse(observed == 1, initial, 1 - initial)
         
         # protect against qlogis(1)=Inf
         initial <- bound(initial, 0.005)
         
         submodel_data <- list(
           observed = observed,
-          H = covariates_dt,
+          D = D_dt,
           initial = initial
         )
       })
-      
       names(all_submodels) <- update_nodes
-      
-      
-      
-      
-      
-      
-      
-      # get submodel data for all nodes
-      all_submodel_data <- self$generate_submodel_data(
-        likelihood, tmle_task,
-        fold_number
-      )
       
       # apply update to all nodes
       updated_likelihoods <- lapply(update_nodes, function(update_node) {
-        submodel_data <- all_submodel_data[[update_node]]
-        epsilon <- all_epsilon[[update_node]]
-        updated_likelihood <- self$apply_submodel(submodel_data, epsilon)
+        submodel_data <- all_submodels[[update_node]]
+        updated_likelihood <- (1 + submodel_data$D %*% d_epsilon) * submodel_data$initial
+        # ZW todo: handle multiple targets
         
         # un-scale to handle bounded continuous
         updated_likelihood <- tmle_task$unscale(
           updated_likelihood,
           update_node
         )
+        updated_likelihood <- ifelse(observed_values[[update_node]] == 1, updated_likelihood, 1 - updated_likelihood)
       })
+      
       names(updated_likelihoods) <- update_nodes
       
       return(updated_likelihoods)
@@ -368,7 +375,7 @@ lmed3_Update <- R6Class(
                          intervention_variables, intervention_levels_treat, intervention_levels_control, 
                          list_all_predicted_lkd
         )
-        observed <- list_all_predicted_lkd[[update_node]][[update_node]] %>% as.vector()
+        observed <- list_all_predicted_lkd[[update_node]][[ tmle_task$npsem[[update_node]]$variables ]] %>% as.vector()
         observed <- tmle_task$scale(observed, update_node)
         initial <- list_all_predicted_lkd[[update_node]]$output
         initial <- tmle_task$scale(initial, update_node)
@@ -386,6 +393,68 @@ lmed3_Update <- R6Class(
         
         epsilon <- all_epsilon[[update_node]]
         updated_likelihood_1 <- self$apply_submodel(submodel_data_1, epsilon)
+        updated_likelihood <- submodel_data$initial
+        updated_likelihood[observed == 1] <- updated_likelihood_1
+        updated_likelihood[observed == 0] <- 1 - updated_likelihood_1  # list of probs are symmetric for now
+        
+        # un-scale to handle bounded continuous
+        updated_likelihood <- tmle_task$unscale(
+          updated_likelihood,
+          update_node
+        )
+      })
+      names(updated_likelihoods) <- update_nodes
+      
+      return(updated_likelihoods)
+    },
+    # use this to update list of full likelihood: list_all_predicted_lkd
+    apply_update_full_onestep = function(tmle_task, likelihood, fold_number, d_epsilon) {
+      update_nodes <- self$update_nodes
+      list_all_predicted_lkd <- likelihood$list_all_predicted_lkd
+      tmle_task <- likelihood$training_task
+      temp_node_names <- names(tmle_task$npsem)
+      obs_data <- tmle_task$data
+      obs_variable_names <- names(obs_data)
+      
+      tmle_params <- self$tmle_params
+      intervention_nodes <- union(names(tmle_params[[1]]$intervention_list_treatment), names(tmle_params$intervention_list_control))
+      intervention_variables <- map_chr(tmle_task$npsem[intervention_nodes], ~.x$variables)
+      intervention_variables_loc <- map_dbl(intervention_variables, ~grep(.x, obs_variable_names))
+      intervention_levels_treat <- map_dbl(tmle_params[[1]]$intervention_list_treatment, ~.x$value %>% as.character %>% as.numeric)
+      intervention_levels_control <- map_dbl(tmle_params[[1]]$intervention_list_control, ~.x$value %>% as.character %>% as.numeric)
+      
+      # apply update to all nodes
+      updated_likelihoods <- lapply(update_nodes, function(update_node) {
+        loc_node <- which(temp_node_names == update_node)
+        # for lt = 1, calculate (1 + de D) p
+        # for lt = 0, give 1 - updated p
+        
+        # this is where full H list gets updated
+        current_newH <- get_current_newH(loc_node, 
+                                         tmle_task, obs_data,
+                                         intervention_variables, intervention_levels_treat, intervention_levels_control, 
+                                         list_all_predicted_lkd
+        )
+        
+        observed <- list_all_predicted_lkd[[update_node]][[tmle_task$npsem[[update_node]]$variables]] %>% as.vector()
+        # observed <- tmle_task$scale(observed, update_node)
+        initial <- list_all_predicted_lkd[[update_node]]$output
+        initial <- tmle_task$scale(initial, update_node)
+        initial <- bound(initial, 0.005)
+        submodel_data <- list(
+          observed = observed,
+          H = current_newH %>% as.matrix,
+          initial = initial
+        )
+        submodel_data_1 <- list(
+          observed = observed[observed == 1],
+          H = current_newH %>% as.matrix,
+          initial = initial[observed == 1]
+        )
+        # for lt = 1, D = (observed - prob) * newH
+        D <- (submodel_data_1$observed - submodel_data_1$initial) * submodel_data_1$H
+        # p_{k+1} = (1 + D de) pk
+        updated_likelihood_1 <- (1 + D * d_epsilon) * submodel_data_1$initial
         updated_likelihood <- submodel_data$initial
         updated_likelihood[observed == 1] <- updated_likelihood_1
         updated_likelihood[observed == 0] <- 1 - updated_likelihood_1  # list of probs are symmetric for now
@@ -505,6 +574,12 @@ lmed3_Update <- R6Class(
     },
     verbose = function() {
       return(private$.verbose)
+    }, 
+    submodel_type = function() {
+      return(private$.submodel_type)
+    }, 
+    d_epsilon = function() {
+      return(private$.d_epsilon)
     }
   ),
   private = list(
@@ -519,6 +594,8 @@ lmed3_Update <- R6Class(
     .delta_epsilon = NULL,
     .convergence_type = NULL,
     .fluctuation_type = NULL,
-    .verbose = FALSE
+    .verbose = FALSE, 
+    .submodel_type = NULL, 
+    .d_epsilon = 0.01
   )
 )
