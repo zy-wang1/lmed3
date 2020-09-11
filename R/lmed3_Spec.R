@@ -29,7 +29,7 @@ lmed3_Spec <- R6Class(
       if (!is.null(self$options$likelihood_override)) {
         likelihood <- self$options$likelihood_override$train(tmle_task)
       } else {
-        likelihood <- middle_likelihood(tmle_task, learner_list)
+        likelihood <- middle_likelihood(tmle_task, learner_list)  # see middle_helper
       }
       
       return(likelihood)

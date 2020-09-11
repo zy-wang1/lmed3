@@ -60,6 +60,35 @@ Likelihood <- R6Class(
         stop("factor_list and task$npsem must have matching names")
       }
     },
+    # get_likelihood = function(tmle_task, node, fold_number = "full") {
+    #   likelihood_factor <- self$factor_list[[node]]
+    #   # first check for cached values for this task
+    #   likelihood_values <- self$cache$get_values(likelihood_factor, tmle_task, fold_number)
+    #   
+    #   if (is.null(likelihood_values)) {
+    #     # if not, generate new ones
+    #     likelihood_values <- likelihood_factor$get_likelihood(tmle_task, fold_number)
+    #     self$cache$set_values(likelihood_factor, tmle_task, 0, fold_number, likelihood_values)
+    #   }
+    #   
+    #   return(likelihood_values)
+    # },
+    # get_likelihoods = function(tmle_task, nodes = NULL, fold_number = "full") {
+    #   if (is.null(nodes)) {
+    #     nodes <- self$nodes
+    #   }
+    #   
+    #   if (length(nodes) > 1) {
+    #     all_likelihoods <- lapply(nodes, function(node) {
+    #       self$get_likelihood(tmle_task, node, fold_number)
+    #     })
+    #     likelihood_dt <- as.data.table(all_likelihoods)
+    #     setnames(likelihood_dt, nodes)
+    #     return(likelihood_dt)
+    #   } else {
+    #     return(self$get_likelihood(tmle_task, nodes[[1]], fold_number))
+    #   }
+    # },
     get_likelihood = function(tmle_task, node, fold_number = "full") {
       likelihood_factor <- self$factor_list[[node]]
       # first check for cached values for this task
@@ -134,6 +163,36 @@ Likelihood <- R6Class(
     },
     cache = function() {
       return(private$.cache)
+    }, 
+    list_all_predicted_lkd = function() {
+      if (!is.null(private$.list_all_predicted_lkd)) {
+        return(private$.list_all_predicted_lkd)
+      } else {
+        # all not A, not t=0 nodes
+        tmle_task <- self$training_task
+        temp_node_names <- names(tmle_task$npsem)
+        loc_A <- grep("A", temp_node_names)
+        loc_Z <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] == "Z"))
+        loc_RLY <- which(sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][1] %in% c("R", "L", "Y") & strsplit(s, "_")[[1]][2] != 0))
+        if_not_0 <- sapply(temp_node_names, function(s) strsplit(s, "_")[[1]][2] != 0)
+        
+        # get list of all possible predicted lkds
+        obs_data <- tmle_task$data
+        obs_variable_names <- colnames(obs_data)
+        list_all_predicted_lkd <- lapply(1:length(temp_node_names), function(loc_node) {
+          if (loc_node > 1) {
+            # currently only support univariate node for t>0
+            current_variable <- tmle_task$npsem[[loc_node]]$variables
+            temp_input <- expand_values(variables = obs_variable_names[1:which(obs_variable_names == current_variable)])  # all possible inputs
+            temp_task <- lmed3_Task$new(temp_input, tmle_task$npsem[1:loc_node])
+            temp_output <- self$factor_list[[loc_node]]$get_likelihood(temp_task, fold_number = "full")  # corresponding outputs
+            data.frame(temp_input, output = temp_output) %>% return
+          }
+        })
+        names(list_all_predicted_lkd) <- temp_node_names
+        private$.list_all_predicted_lkd <- list_all_predicted_lkd
+        return(list_all_predicted_lkd)  
+      }
     }
   ),
   private = list(
@@ -158,6 +217,7 @@ Likelihood <- R6Class(
     .chain = function(tmle_task) {
       stop("chain method doesn't work for Likelihood. Currently, no analogous functionality")
     },
+    .list_all_predicted_lkd = NULL,
     .cache = NULL
   )
 )
@@ -173,77 +233,81 @@ make_Likelihood <- Likelihood$new
 
 
 
-
-#' Cache Likelihood values, update those values
-#' @docType class
-#'
-#' @importFrom R6 R6Class
-#' @importFrom sl3 Lrnr_base
-#' @importFrom assertthat assert_that is.count is.flag
-#' @importFrom delayed bundle_delayed
-#' @export
-Likelihood_cache <- R6Class(
-  classname = "Likelihood_cache",
-  portable = TRUE,
-  class = TRUE,
-  public = list(
-    initialize = function() {
-      private$.cache <- new.env()
-    },
-    tasks_at_step = function(current_step) {
-      self$tasks[task_uuids]
-    },
-    get_update_step = function(likelihood_factor, tmle_task, fold_number) {
-      key <- self$key(likelihood_factor, tmle_task, fold_number)
-      step_key <- sprintf("%s_%s", key, "step")
-      get0(step_key, self$cache, inherits = FALSE)
-    },
-    key = function(likelihood_factor, tmle_task, fold_number) {
-      key <- sprintf("%s_%s_%s", likelihood_factor$uuid, tmle_task$uuid, fold_number)
-      return(key)
-    },
-    set_values = function(likelihood_factor, tmle_task, update_step = 0, fold_number, values) {
-      self$cache_task(tmle_task)
-      
-      # respect likelihood factors that don't want to cache
-      if (!likelihood_factor$cache) {
-        return(0)
-      }
-      key <- self$key(likelihood_factor, tmle_task, fold_number)
-      assign(key, values, self$cache)
-      
-      step_key <- sprintf("%s_%s", key, "step")
-      assign(step_key, update_step, self$cache)
-      
-      return(1)
-    },
-    get_values = function(likelihood_factor, tmle_task, fold_number) {
-      # matching_index <- self$find_match(likelihood_factor, tmle_task, fold_number)
-      key <- self$key(likelihood_factor, tmle_task, fold_number)
-      values <- get0(key, self$cache, inherits = FALSE)
-      
-      return(values)
-    },
-    cache_lf = function(likelihood_factor) {
-      private$.lfs[likelihood_factor$uuid] <- likelihood_factor
-    },
-    cache_task = function(task) {
-      if (!(task$uuid %in% names(private$.tasks))) {
-        private$.tasks[[task$uuid]] <- task
-      }
-    }
-  ),
-  active = list(
-    cache = function() {
-      return(private$.cache)
-    },
-    tasks = function() {
-      return(private$.tasks)
-    }
-  ),
-  private = list(
-    .tasks = list(),
-    .lfs = list(),
-    .cache = NULL
-  )
-)
+#' 
+#' #' Cache Likelihood values, update those values
+#' #' @docType class
+#' #'
+#' #' @importFrom R6 R6Class
+#' #' @importFrom sl3 Lrnr_base
+#' #' @importFrom assertthat assert_that is.count is.flag
+#' #' @importFrom delayed bundle_delayed
+#' #' @export
+#' Likelihood_cache <- R6Class(
+#'   classname = "Likelihood_cache",
+#'   portable = TRUE,
+#'   class = TRUE,
+#'   public = list(
+#'     initialize = function() {
+#'       private$.cache <- new.env()
+#'     },
+#'     tasks_at_step = function(current_step) {
+#'       self$tasks[task_uuids]
+#'     },
+#'     get_update_step = function(likelihood_factor, tmle_task, fold_number) {
+#'       key <- self$key(likelihood_factor, tmle_task, fold_number)
+#'       step_key <- sprintf("%s_%s", key, "step")
+#'       get0(step_key, self$cache, inherits = FALSE)
+#'     },
+#'     key = function(likelihood_factor, tmle_task, fold_number) {
+#'       key <- sprintf("%s_%s_%s", likelihood_factor$uuid, tmle_task$uuid, fold_number)
+#'       return(key)
+#'     },
+#'     set_values = function(likelihood_factor, tmle_task, update_step = 0, fold_number, values) {
+#'       self$cache_task(tmle_task)
+#'       
+#'       # respect likelihood factors that don't want to cache
+#'       if (!likelihood_factor$cache) {
+#'         return(0)
+#'       }
+#'       key <- self$key(likelihood_factor, tmle_task, fold_number)
+#'       assign(key, values, self$cache)
+#'       
+#'       step_key <- sprintf("%s_%s", key, "step")
+#'       assign(step_key, update_step, self$cache)
+#'       
+#'       return(1)
+#'     },
+#'     get_values = function(likelihood_factor, tmle_task, fold_number) {
+#'       # matching_index <- self$find_match(likelihood_factor, tmle_task, fold_number)
+#'       key <- self$key(likelihood_factor, tmle_task, fold_number)
+#'       values <- get0(key, self$cache, inherits = FALSE)
+#'       
+#'       return(values)
+#'     },
+#'     cache_lf = function(likelihood_factor) {
+#'       private$.lfs[likelihood_factor$uuid] <- likelihood_factor
+#'     },
+#'     cache_task = function(task) {
+#'       if (!(task$uuid %in% names(private$.tasks))) {
+#'         private$.tasks[[task$uuid]] <- task
+#'       }
+#'     }
+#'   ),
+#'   active = list(
+#'     cache = function() {
+#'       return(private$.cache)
+#'     },
+#'     tasks = function() {
+#'       return(private$.tasks)
+#'     }
+#'   ),
+#'   private = list(
+#'     .tasks = list(),
+#'     .lfs = list(),
+#'     .cache = NULL
+#'   )
+#' )
+#' 
+#' 
+#' 
+#' 

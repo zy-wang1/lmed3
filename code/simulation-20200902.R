@@ -326,7 +326,7 @@ for (sample_size in c(
 
 # test lmed3 functions
 
-if_misspec <- T
+if_misspec <- F
 
 node_list <- list(L_0 = c("L1_0", "L2_0"), 
                   A_1 = "A_1",
@@ -345,8 +345,8 @@ data_truth <- generate_Zheng_data(B = 100000, tau = 2, seed = 202008, setAM = c(
 truth <- data_truth[[3]]$Y %>% mean
 truth
 
-n_sim <- 48
-sample_size <- 400
+n_sim <- 8
+sample_size <- 100
 # for (sample_size in c(
 #   # 50
 #   # ,
@@ -395,8 +395,8 @@ sample_size <- 400
           learner_list
         )
         
-        tmle_params <- middle_spec$make_params(tmle_task, initial_likelihood)[[1]]
-        nontargeting <- tmle_params$estimates(tmle_task)
+        tmle_params <- middle_spec$make_params(tmle_task, initial_likelihood)
+        nontargeting <- tmle_params[[1]]$estimates(tmle_task)
         temp_lmed3_nontargeting <- nontargeting$psi
         temp_IC <- nontargeting$IC
         
