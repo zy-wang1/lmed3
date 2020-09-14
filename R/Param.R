@@ -178,6 +178,7 @@ Param_middle <- R6Class(
       }
       
       # recalculate if list_D or result is null, or if we force it to update
+      # make sure we force update this after each updating step
       # this helps speed up updater$check_convergence
       if (!is.null(private$.list_D) & !is.null(private$.result) & update == F) {
         return(private$.result)

@@ -21,6 +21,7 @@ library(delayed)  # bundle_delayed
 library(assertthat)  # assert_that
 library(methods)  # is
 library(hal9001)
+library(ranger)
 
 source(file.path(home, "code", "basic_functions-202008.R"))
 source(file.path(home, "code", "generate_Zheng_data-202008.R"))
@@ -28,9 +29,11 @@ source(file.path(home, "code", "get_list_H.R"))
 source(file.path(home, "code", "est_functions_tmle_1-202008.R"))
 source(file.path(home, "code", "est_functions_tmle_2-202008.R"))
 code_list <- list.files("./R", full.names = T)
-lapply(code_list, source)
+for (code in code_list) source(code)
 
+n_sim <- nCores * 13
 
+timepoint <- 2
 # configs for a barebone lmed3 non-targeting substitution estimator
 # ARZLY model
 node_list <- list(L_0 = c("L1_0", "L2_0"), 
@@ -48,15 +51,13 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
 )
 
 
-
-timepoint <- 2
-
-if_misspec <- T
-n_sim <- 100
-sample_size <- 500
-data_truth <- generate_Zheng_data(B = 100000, tau = timepoint, seed = 202008, setAM = c(1, 0), if_LY_misspec = if_misspec)
-truth <- data_truth[[timepoint + 1]]$Y %>% mean
-truth
+# # only needed when debugging
+# n_sim <- 24
+# if_misspec <- F
+# sample_size <- 500
+# data_truth <- generate_Zheng_data(B = 100000, tau = timepoint, seed = 202008, setAM = c(1, 0), if_LY_misspec = if_misspec)
+# truth <- data_truth[[timepoint + 1]]$Y %>% mean
+# truth
 
 for (if_misspec in c(T, F)) {
   data_truth <- generate_Zheng_data(B = 100000, tau = timepoint, seed = 202008, setAM = c(1, 0), if_LY_misspec = if_misspec)
@@ -70,8 +71,8 @@ for (if_misspec in c(T, F)) {
       # sample_size <- 500
       RNGkind("L'Ecuyer-CMRG")
       set.seed(123)
- 
-
+      
+      
       results <- mclapply(1:n_sim, function(s) {
         data_sim <- generate_Zheng_data(B = sample_size, tau = timepoint, if_LY_misspec = if_misspec)
         temp_seq_reg <- est_seq_reg(data_sim = data_sim)
@@ -89,13 +90,23 @@ for (if_misspec in c(T, F)) {
           
           # choose base learners
           lrnr_mean <- make_learner(Lrnr_mean)
-          lrnr_glm <- make_learner(Lrnr_glm)
+          # lrnr_glm <- make_learner(Lrnr_glm)
           lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
+          lrnr_ranger50 <- make_learner(Lrnr_ranger, num.trees = 50)
+          lrnr_hal_simple <- make_learner(Lrnr_hal9001, max_degree = 3, n_folds = 3)
+          lrnr_lasso <- make_learner(Lrnr_glmnet) # alpha default is 1
+          lrnr_ridge <- make_learner(Lrnr_glmnet, alpha = 0)
+          lrnr_elasticnet <- make_learner(Lrnr_glmnet, alpha = .5)
           learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
             learners = list(
               lrnr_mean,
               # lrnr_glm, 
-              lrnr_glm_fast)
+              lrnr_glm_fast, 
+              lrnr_ranger50, 
+              lrnr_hal_simple
+              ,
+              lrnr_lasso, lrnr_ridge, lrnr_elasticnet
+              )
           ))
           # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
           names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
@@ -104,8 +115,8 @@ for (if_misspec in c(T, F)) {
             tmle_task,
             learner_list
           )
-          
           tmle_params <- middle_spec$make_params(tmle_task, initial_likelihood)
+          
           nontargeting <- tmle_params[[1]]$estimates(tmle_task)
           temp_lmed3_nontargeting <- nontargeting$psi
           temp_IC <- nontargeting$IC
@@ -121,34 +132,36 @@ for (if_misspec in c(T, F)) {
         }
         
         {
-          data_wide <- data.frame(data_sim)
-
-          middle_spec <- lmed_middle(
-            treatment_level = 1,
-            control_level = 0
-          )
-          tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
-          
-          # choose base learners
-          lrnr_mean <- make_learner(Lrnr_mean)
-          lrnr_glm <- make_learner(Lrnr_glm)
-          lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
-          lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-          learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
-            learners = list(
-              lrnr_mean,
-              # lrnr_glm, 
-              lrnr_hal_simple,
-              lrnr_glm_fast)
-          ))          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
-          names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
-          
-          initial_likelihood <- middle_spec$make_initial_likelihood(
-            tmle_task,
-            learner_list
-          )
+          # data_wide <- data.frame(data_sim)
+          # 
+          # middle_spec <- lmed_middle(
+          #   treatment_level = 1,
+          #   control_level = 0
+          # )
+          # tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
+          # 
+          # # choose base learners
+          # lrnr_mean <- make_learner(Lrnr_mean)
+          # lrnr_glm <- make_learner(Lrnr_glm)
+          # lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
+          # lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
+          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
+          #   learners = list(
+          #     lrnr_mean,
+          #     # lrnr_glm, 
+          #     lrnr_hal_simple,
+          #     lrnr_glm_fast)
+          # ))          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
+          # names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
+          # 
+          # initial_likelihood <- middle_spec$make_initial_likelihood(
+          #   tmle_task,
+          #   learner_list
+          # )
           updater <- lmed3_Update$new(maxit = 1, convergence_type = "scaled_var",
-                                      fluctuation_type = "standard", cvtmle = T)
+                                      fluctuation_type = "standard"
+                                      # , cvtmle = T
+                                      )
           targeted_likelihood <- Targeted_Likelihood$new(initial_likelihood, updater)
           tmle_params <- middle_spec$make_params(tmle_task, targeted_likelihood)
           updater$tmle_params <- tmle_params
@@ -168,33 +181,33 @@ for (if_misspec in c(T, F)) {
         }
         
         {
-          data_wide <- data.frame(data_sim)
-          
-          middle_spec <- lmed_middle(
-            treatment_level = 1,
-            control_level = 0
-          )
-          tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
-          
-          # choose base learners
-          lrnr_mean <- make_learner(Lrnr_mean)
-          lrnr_glm <- make_learner(Lrnr_glm)
-          lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
-          lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-          learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
-            learners = list(
-              lrnr_mean,
-              # lrnr_glm, 
-              lrnr_hal_simple,
-              lrnr_glm_fast)
-          ))
-          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
-          names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
-          
-          initial_likelihood <- middle_spec$make_initial_likelihood(
-            tmle_task,
-            learner_list
-          )
+          # data_wide <- data.frame(data_sim)
+          # 
+          # middle_spec <- lmed_middle(
+          #   treatment_level = 1,
+          #   control_level = 0
+          # )
+          # tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
+          # 
+          # # choose base learners
+          # lrnr_mean <- make_learner(Lrnr_mean)
+          # lrnr_glm <- make_learner(Lrnr_glm)
+          # lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
+          # lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
+          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
+          #   learners = list(
+          #     lrnr_mean,
+          #     # lrnr_glm, 
+          #     lrnr_hal_simple,
+          #     lrnr_glm_fast)
+          # ))
+          # # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
+          # names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
+          # 
+          # initial_likelihood <- middle_spec$make_initial_likelihood(
+          #   tmle_task,
+          #   learner_list
+          # )
           updater <- lmed3_Update$new(maxit = 10, convergence_type = "scaled_var",
                                       fluctuation_type = "standard")
           targeted_likelihood <- Targeted_Likelihood$new(initial_likelihood, updater)
@@ -216,35 +229,35 @@ for (if_misspec in c(T, F)) {
         }
         
         {
-          data_wide <- data.frame(data_sim)
-          
-          middle_spec <- lmed_middle(
-            treatment_level = 1,
-            control_level = 0
-          )
-          tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
-          
-          # choose base learners
-          lrnr_mean <- make_learner(Lrnr_mean)
-          lrnr_glm <- make_learner(Lrnr_glm)
-          lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
-          lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
-          learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
-            learners = list(
-              lrnr_mean,
-              # lrnr_glm, 
-              lrnr_hal_simple,
-              lrnr_glm_fast)
-          ))
-          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
-          names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
-          
-          initial_likelihood <- middle_spec$make_initial_likelihood(
-            tmle_task,
-            learner_list
-          )
-          updater <- lmed3_Update$new(maxit = 10, convergence_type = "scaled_var",
-                                      fluctuation_type = "standard", submodel_type = "onestep", d_epsilon = 0.05)
+          # data_wide <- data.frame(data_sim)
+          # 
+          # middle_spec <- lmed_middle(
+          #   treatment_level = 1,
+          #   control_level = 0
+          # )
+          # tmle_task <- middle_spec$make_tmle_task(data_wide, node_list)
+          # 
+          # # choose base learners
+          # lrnr_mean <- make_learner(Lrnr_mean)
+          # lrnr_glm <- make_learner(Lrnr_glm)
+          # lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
+          # lrnr_hal_simple <- make_learner(Lrnr_hal9001, degrees = 1, n_folds = 2)
+          # learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
+          #   learners = list(
+          #     lrnr_mean,
+          #     # lrnr_glm, 
+          #     lrnr_hal_simple,
+          #     lrnr_glm_fast)
+          # ))
+          # # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
+          # names(learner_list) <- names(tmle_task$npsem)  # the first will be ignored; empirical dist. will be used for covariates
+          # 
+          # initial_likelihood <- middle_spec$make_initial_likelihood(
+          #   tmle_task,
+          #   learner_list
+          # )
+          updater <- lmed3_Update$new(maxit = 50, convergence_type = "scaled_var",
+                                      fluctuation_type = "standard", submodel_type = "onestep", d_epsilon = 0.01)
           targeted_likelihood <- Targeted_Likelihood$new(initial_likelihood, updater)
           tmle_params <- middle_spec$make_params(tmle_task, targeted_likelihood)
           updater$tmle_params <- tmle_params
@@ -272,12 +285,12 @@ for (if_misspec in c(T, F)) {
                             firsttargeting$psi, 
                             tentargeting$psi, 
                             onestep_targeting$psi
-                            ), 
-                    ci = c(rep(NA, 8), 
-                           CI1, CI2, 
-                           CI1_first, CI2_first, 
-                           CI1_ten, CI2_ten, 
-                           CI1_onestep, CI2_onestep)
+        ), 
+        ci = c(rep(NA, 8), 
+               CI1, CI2, 
+               CI1_first, CI2_first, 
+               CI1_ten, CI2_ten, 
+               CI1_onestep, CI2_onestep)
         ))
       }, mc.cores = nCores)
       estimations <- lapply(results, function(x) x[[1]]) %>% abind(along = 0)
@@ -297,7 +310,7 @@ for (if_misspec in c(T, F)) {
     estimations <- estimations[!(ifNA & ifLarge), ]
     report <- data.frame(Bias = apply(estimations, 2, function(s) mean(s, na.rm = T)) - truth, 
                          lapply(1:ncol(estimations), function(which_col) c(mean((estimations[, which_col] - truth)^2, na.rm = T), 
-                                                                       sd(estimations[, which_col], na.rm = T))) %>% abind(along = 0)
+                                                                           sd(estimations[, which_col], na.rm = T))) %>% abind(along = 0)
     )
     
     names(report)[2:3] <- c("MSE", "SD")
@@ -308,8 +321,8 @@ for (if_misspec in c(T, F)) {
                           "One-step MLE, Density",
                           "lmed3, Non-targeted", 
                           "lmed3, First-step Logistic", 
-                          "lmed3, Iterative Logistic maxit = 10", 
-                          "lmed3, one-step common d_epsilon, maxit = 10"
+                          "lmed3, Iterative Logistic maxit 10", 
+                          "lmed3, one-step common de 0.01, maxit = 50"
     )
     report <- report[, c(2, 1, 3)]
     
@@ -317,16 +330,16 @@ for (if_misspec in c(T, F)) {
                          coverage = sapply(1:nrow(report), function(k) {
                            mean(cis[, 2*k-1] < truth & cis[, 2*k] > truth)
                          })
-                         )
+    )
     report
     results
     ifNA
     ifLarge
     
     report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size, "; iteration: ", n_sim, "; run time: ", round(time.taken, 2), " ", units(time.taken),
-                                                       "; # of NA and Large:  ",   sum(ifNA), " and ", sum(ifLarge)), digits = 6) %>% print(caption.placement = "top"
+                                                       "; NA and Large:  ",   sum(ifNA), " and ", sum(ifLarge)), digits = 6) %>% print(caption.placement = "top"
                                                                                                                                             ,
-                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", if_misspec, "_addhal_20200911.tex")
+                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", ifelse(if_misspec, "misspecified", "correct"), "_sl_20200913.tex")
                                                        )
   }
 }

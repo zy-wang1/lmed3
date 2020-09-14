@@ -40,7 +40,7 @@ generate_Zheng_data <- function(B, tau, seed = NULL, setAM = NULL, if_LY_misspec
                           .f = ~ rbinom(n = 1, size = 1, prob = .x)
         )  
       } else {
-        # LY misspec
+        # LY misspec with squares
         temp_L <- map_dbl(.x = scale_01(- 1 + 0.3*L02 + temp_A^2 + 0.7*temp_Z^2 - 0.2*ifelse_vec(t>1, temp_data[[t]]$L1, 0)), 
                           .f = ~ rbinom(n = 1, size = 1, prob = .x)
         )

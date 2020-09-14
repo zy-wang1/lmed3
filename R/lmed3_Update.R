@@ -71,7 +71,6 @@ lmed3_Update <- R6Class(
       return(collapsed_covariate)
     },
     update_step = function(likelihood, tmle_task, fold_number = "full") {
-      
       if (self$submodel_type == "onestep") {
         # update likelihoods
         likelihood$update(new_epsilons = 0, self$step_number, fold_number)  # now full lkd list is updated too
@@ -80,6 +79,11 @@ lmed3_Update <- R6Class(
           tmle_param$clever_covariates(tmle_task, fold_number
                                        , update = T
           )  # this updates the covariates; it does not call full list of lkd
+        }))
+        nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
+          tmle_param$estimates(tmle_task, fold_number
+                               , update = T
+          )  # this updates the D_list and results (est and ICs)
         }))
         
         if (fold_number != "full") {
@@ -102,16 +106,23 @@ lmed3_Update <- R6Class(
         nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
           tmle_param$clever_covariates(tmle_task, fold_number
                                        , update = T
-          )  # this updates the covariates
+          )  # this updates the covariates; it does not call full list of lkd
+        }))
+        nothing <- suppressWarnings(lapply(self$tmle_params, function(tmle_param) {
+          tmle_param$estimates(tmle_task, fold_number
+                               , update = T
+          )  # this updates the D_list and results (est and ICs)
         }))
         
         if (fold_number != "full") {
           # update full fit likelihoods if we haven't already
-          likelihood$update(new_epsilons, self$step_number, "full")
+          likelihood$update(new_epsilons, self$step_number, "full")  # now full lkd list is updated too
         }
         # increment step count
         private$.step_number <- private$.step_number + 1
       }
+      
+      
     },
     generate_submodel_data = function(likelihood, tmle_task,
                                       fold_number = "full") {
