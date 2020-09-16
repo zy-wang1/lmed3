@@ -50,7 +50,7 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
                   Y_2 = "Y_2"
 )
 
-
+  
 # # only needed when debugging
 # n_sim <- 24
 # if_misspec <- F
@@ -64,14 +64,16 @@ for (if_misspec in c(T, F)) {
   truth <- data_truth[[timepoint + 1]]$Y %>% mean
   truth
   
-  for (sample_size in c(400, 4000)) {
+  for (sample_size in c(400
+                        , 4000
+                        )) {
     {
       start.time <- Sys.time()
       
       # sample_size <- 500
       RNGkind("L'Ecuyer-CMRG")
-      set.seed(123)
-      
+      set.seed(1234)
+          
       
       results <- mclapply(1:n_sim, function(s) {
         data_sim <- generate_Zheng_data(B = sample_size, tau = timepoint, if_LY_misspec = if_misspec)
@@ -99,13 +101,14 @@ for (if_misspec in c(T, F)) {
           lrnr_elasticnet <- make_learner(Lrnr_glmnet, alpha = .5)
           learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
             learners = list(
-              lrnr_mean,
+              # lrnr_mean,
               # lrnr_glm, 
-              lrnr_glm_fast, 
-              lrnr_ranger50, 
-              lrnr_hal_simple
-              ,
-              lrnr_lasso, lrnr_ridge, lrnr_elasticnet
+              lrnr_glm_fast
+              # , 
+              # lrnr_ranger50, 
+              # lrnr_hal_simple
+              # ,
+              # lrnr_lasso, lrnr_ridge, lrnr_elasticnet
               )
           ))
           # learner_list <- lapply(1:length(tmle_task$npsem), function(s) lrnr_glm_fast)  # simplest learner
@@ -256,7 +259,7 @@ for (if_misspec in c(T, F)) {
           #   tmle_task,
           #   learner_list
           # )
-          updater <- lmed3_Update$new(maxit = 50, convergence_type = "scaled_var",
+          updater <- lmed3_Update$new(maxit = 100, convergence_type = "scaled_var",
                                       fluctuation_type = "standard", submodel_type = "onestep", d_epsilon = 0.01)
           targeted_likelihood <- Targeted_Likelihood$new(initial_likelihood, updater)
           tmle_params <- middle_spec$make_params(tmle_task, targeted_likelihood)
@@ -322,7 +325,7 @@ for (if_misspec in c(T, F)) {
                           "lmed3, Non-targeted", 
                           "lmed3, First-step Logistic", 
                           "lmed3, Iterative Logistic maxit 10", 
-                          "lmed3, one-step common de 0.01, maxit = 50"
+                          "lmed3, one-step common de 0.01, maxit = 100"
     )
     report <- report[, c(2, 1, 3)]
     
@@ -339,7 +342,7 @@ for (if_misspec in c(T, F)) {
     report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size, "; iteration: ", n_sim, "; run time: ", round(time.taken, 2), " ", units(time.taken),
                                                        "; NA and Large:  ",   sum(ifNA), " and ", sum(ifLarge)), digits = 6) %>% print(caption.placement = "top"
                                                                                                                                             ,
-                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", ifelse(if_misspec, "misspecified", "correct"), "_sl_20200913.tex")
+                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", ifelse(if_misspec, "misspecified", "correct"), "_sl_20200916_simplesl_updatedseD.tex")
                                                        )
   }
 }

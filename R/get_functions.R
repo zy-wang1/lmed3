@@ -148,7 +148,10 @@ get_current_newH <- function(loc_node,
                                  left_join(all_observed_1, list_all_predicted_lkd[[k]])$output
                              }) %>% pmap_dbl(prod))
         
-        H_current <- ifelse(data_temp[last(intervention_variables_loc_needed)] == 1, 1/part_A*part_Z, 0) %>% as.vector
+        H_current <- ifelse(
+          # data_temp[last(intervention_variables_loc_needed)] == 1
+          apply(data_temp[intervention_variables_loc_needed] == 1, 1, prod) == 1
+          , 1/part_A*part_Z, 0) %>% as.vector
       }
       # Z nodes
       if (loc_node %in% loc_Z) {
@@ -166,7 +169,11 @@ get_current_newH <- function(loc_node,
             left_join(all_observed_0, list_all_predicted_lkd[[k]])$output
         }) %>% pmap_dbl(prod)
         
-        H_current <- ifelse(data_temp[last(intervention_variables_loc_needed)] == 0, 1/part_A*part_LR, 0)
+        H_current <- ifelse(
+          # ZW todo: stochastic intervention
+          # data_temp[last(intervention_variables_loc_needed)] == 0
+          apply(data_temp[intervention_variables_loc_needed] == 0, 1, prod) == 1
+          , 1/part_A*part_LR, 0)
       }
     }
     
@@ -261,8 +268,11 @@ get_obs_H <- function(tmle_task, obs_data, current_likelihood,
     loc_A_needed <- loc_A[loc_A < temp_ind]  # all needed A nodes
     loc_Z_needed <- loc_Z[loc_Z < temp_ind]  # all needed Z nodes
     # this is the At indicators for H_RLY; now
-    A_ind <- obs_data[[tmle_task$npsem[[last(loc_A_needed)]]$variables]] ==
-      intervention_levels_treat[tmle_task$npsem[[last(loc_A_needed)]]$variables]
+    A_ind <- 
+      # obs_data[[tmle_task$npsem[[last(loc_A_needed)]]$variables]] == intervention_levels_treat[tmle_task$npsem[[last(loc_A_needed)]]$variables]
+    apply(sapply(loc_A_needed, function(k) {
+      obs_data[[tmle_task$npsem[[k]]$variables]] == intervention_levels_treat[tmle_task$npsem[[k]]$variables]
+    }), 1, prod) == 1
     # A_ind <- obs_data[[temp_node_names[last(loc_A_needed)]]]  # using variable names (rather than node names) to inquire obs_data
     # these A probs will be taken as product
     part_A <- lapply(loc_A_needed, function(k) current_likelihood$get_likelihoods(cf_task_treatment, temp_node_names[k])) %>% pmap_dbl(prod)  # this is the likelihood of being 1
@@ -278,8 +288,11 @@ get_obs_H <- function(tmle_task, obs_data, current_likelihood,
   for (temp_ind in loc_Z) {
     loc_A_needed <- loc_A[loc_A < temp_ind]  # all needed A nodes
     loc_RLY_needed <- loc_RLY[loc_RLY < temp_ind]
-    A_ind <- obs_data[[tmle_task$npsem[[last(loc_A_needed)]]$variables]] ==
-      intervention_levels_control[tmle_task$npsem[[last(loc_A_needed)]]$variables]
+    A_ind <- 
+      # obs_data[[tmle_task$npsem[[last(loc_A_needed)]]$variables]] == intervention_levels_control[tmle_task$npsem[[last(loc_A_needed)]]$variables]
+      apply(sapply(loc_A_needed, function(k) {
+        obs_data[[tmle_task$npsem[[k]]$variables]] == intervention_levels_control[tmle_task$npsem[[k]]$variables]
+      }), 1, prod) == 1
     part_A <- lapply(loc_A_needed, function(k) current_likelihood$get_likelihoods(cf_task_control, temp_node_names[k])) %>% pmap_dbl(prod)
     part_RLY <- lapply(loc_RLY_needed, function(k) {
       current_likelihood$get_likelihoods(cf_task_treatment, temp_node_names[k]) / 
