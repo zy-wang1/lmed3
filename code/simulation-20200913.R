@@ -22,6 +22,7 @@ library(assertthat)  # assert_that
 library(methods)  # is
 library(hal9001)
 library(ranger)
+library(digest)
 
 source(file.path(home, "code", "basic_functions-202008.R"))
 source(file.path(home, "code", "generate_Zheng_data-202008.R"))
@@ -59,13 +60,17 @@ node_list <- list(L_0 = c("L1_0", "L2_0"),
 # truth <- data_truth[[timepoint + 1]]$Y %>% mean
 # truth
 
-for (if_misspec in c(T, F)) {
+for (if_misspec in c(T
+                     # , F
+                     )) {
   data_truth <- generate_Zheng_data(B = 100000, tau = timepoint, seed = 202008, setAM = c(1, 0), if_LY_misspec = if_misspec)
   truth <- data_truth[[timepoint + 1]]$Y %>% mean
   truth
   
-  for (sample_size in c(400
-                        , 4000
+  for (sample_size in c(
+    # 400
+    #                     , 
+    4000
                         )) {
     {
       start.time <- Sys.time()
@@ -96,7 +101,7 @@ for (if_misspec in c(T, F)) {
           lrnr_glm_fast <- Lrnr_glm_fast$new(outcome_type = "binomial")
           lrnr_ranger50 <- make_learner(Lrnr_ranger, num.trees = 50)
           lrnr_hal_simple <- make_learner(Lrnr_hal9001, max_degree = 3, n_folds = 3)
-          lrnr_lasso <- make_learner(Lrnr_glmnet) # alpha default is 1
+          lrnr_lasso <- make_learner(Lrnr_glmnet) # al  pha default is 1
           lrnr_ridge <- make_learner(Lrnr_glmnet, alpha = 0)
           lrnr_elasticnet <- make_learner(Lrnr_glmnet, alpha = .5)
           learner_list <- lapply(1:length(tmle_task$npsem), function(s) Lrnr_sl$new(
@@ -342,7 +347,7 @@ for (if_misspec in c(T, F)) {
     report %>% xtable(type = "latex", caption = paste0("Sample size ", sample_size, "; iteration: ", n_sim, "; run time: ", round(time.taken, 2), " ", units(time.taken),
                                                        "; NA and Large:  ",   sum(ifNA), " and ", sum(ifLarge)), digits = 6) %>% print(caption.placement = "top"
                                                                                                                                             ,
-                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", ifelse(if_misspec, "misspecified", "correct"), "_sl_20200916_simplesl_updatedseD.tex")
+                                                                                                                                            file = paste0("./temp/", sample_size, "_LY_misspec_", ifelse(if_misspec, "misspecified", "correct"), "_sl_20200916_simplesl_oldseD.tex")
                                                        )
   }
 }

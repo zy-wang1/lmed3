@@ -494,7 +494,7 @@ lmed3_Update <- R6Class(
         #       condition is met |P_n D*| / SE(D*) =< max(1/log(n), 1/10)
         IC <- do.call(cbind, lapply(estimates, `[[`, "IC"))
         se_Dstar <- sqrt(apply(IC, 2, var) 
-                         # / tmle_task$nrow
+                         / tmle_task$nrow
                          )
         ED_threshold <- se_Dstar / min(log(tmle_task$nrow), 10)
       } else if (self$convergence_type == "sample_size") {

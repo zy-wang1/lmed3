@@ -60,6 +60,7 @@ lmed3_Task <- R6Class(
       }
       private$.npsem <- npsem
       private$.node_cache <- new.env()
+      private$.uuid <- digest(self$data)
     },
     get_tmle_node = function(node_name, format = FALSE) {
       # node as dt vs node as column
