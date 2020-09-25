@@ -226,7 +226,7 @@ get_obs_Q <- function(tmle_task, obs_data, list_H,
                                        # for all non-A, non-0 variables, calculate the variable by rule
                                        # for Z's, use A = 0 values; outputs are predicted probs at each possible comb
                                        loc_Z_needed <- loc_Z[loc_Z > loc_node]  # only product children variables
-                                       temp_list_0 <- lapply(loc_Z, 
+                                       temp_list_0 <- lapply(loc_Z_needed, 
                                                              function(each_t) {
                                                                left_join(temp_all_comb_0, list_all_predicted_lkd[[each_t]])$output
                                                              })

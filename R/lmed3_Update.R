@@ -51,7 +51,7 @@ lmed3_Update <- R6Class(
                           fluctuation_type = c("standard", "weighted"),
                           verbose = FALSE, 
                           d_epsilon = 0.01, 
-                          submodel_type = "logistic") {
+                          submodel_type = NULL) {
       private$.maxit <- maxit
       private$.cvtmle <- cvtmle
       private$.one_dimensional <- one_dimensional
